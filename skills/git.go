@@ -2,6 +2,7 @@ package skills
 
 import (
 	"fmt"
+	urlpkg "net/url"
 	"strings"
 )
 
@@ -35,6 +36,15 @@ func ParseRepoSpec(raw string) (url, ref string, err error) {
 	}
 	if !strings.HasPrefix(url, "https://") {
 		return "", "", fmt.Errorf("skills: repository must use https://, got %q", url)
+	}
+	parsed, parseErr := urlpkg.Parse(url)
+	if parseErr != nil {
+		return "", "", fmt.Errorf("skills: invalid repository URL")
+	}
+	if parsed.User != nil {
+		// Do not repeat url in the error: it may contain the credential this
+		// validation is intended to keep out of process arguments and logs.
+		return "", "", fmt.Errorf("skills: repository URL must not contain userinfo")
 	}
 	return url, ref, nil
 }
