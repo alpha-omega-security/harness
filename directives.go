@@ -94,7 +94,8 @@ func StripDirectives(root string) (int, error) {
 		if entry.IsDir() && base == ".git" {
 			return filepath.SkipDir
 		}
-		if matchesDirective(directiveDirs, base) {
+		directoryLike := entry.IsDir() || entry.Type()&fs.ModeSymlink != 0
+		if directoryLike && matchesDirective(directiveDirs, base) {
 			if err := os.RemoveAll(p); err != nil {
 				return err
 			}
