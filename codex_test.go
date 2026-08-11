@@ -82,3 +82,22 @@ func TestCodexToolItems(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexTodoListItemsAreDropped(t *testing.T) {
+	t.Parallel()
+
+	for _, eventType := range []string{"item.updated", "item.completed"} {
+		t.Run(eventType, func(t *testing.T) {
+			t.Parallel()
+
+			input := `{"type":"` + eventType + `","item":{"id":"item_5","type":"todo_list","items":[{"text":"Inspect inputs","completed":true},{"text":"Run tests","completed":false}]}}`
+			var events []Event
+			CodexHarness{}.ParseStream(strings.NewReader(input), func(event Event) {
+				events = append(events, event)
+			})
+			if len(events) != 0 {
+				t.Fatalf("got %d events for progress-only todo list: %+v", len(events), events)
+			}
+		})
+	}
+}

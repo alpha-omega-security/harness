@@ -148,6 +148,10 @@ func parseCodexLine(raw []byte, emit func(Event)) {
 	case event.Type == "item.started":
 		// item.completed repeats the identifying fields and adds the result.
 		// Emitting both would display each command twice.
+	case event.Item != nil && event.Item.Type == "todo_list":
+		// Codex emits todo-list snapshots on item.updated and item.completed.
+		// They are internal progress state rather than agent output, and each
+		// update repeats the full list, so do not surface them as text.
 	case event.Item != nil && event.Item.Type == "error":
 		emit(Event{Kind: KindError, Text: event.Item.Message})
 	case event.Item != nil && event.Item.Text != "":
