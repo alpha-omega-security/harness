@@ -238,6 +238,16 @@ the allowlist.
 
 `skills` parses `SKILL.md` files following the [Agent Skills specification](https://agentskills.io/specification). YAML frontmatter is optional, so plain markdown instruction files parse too. `Parse` returns a `Skill` with the spec fields (name, description, license, compatibility, allowed-tools, metadata), the body, a sibling `schema.json` when present, and a content hash covering both. `Walk` finds skills under a directory; `Stage` writes one into the selected backend's discovery directory; `Concat` joins bodies for a system prompt; `Render` produces `SKILL.md` bytes from a `Skill` built in memory. `ValidateNamespace` and the `Match`/`PathIncluded` glob helpers support callers that add their own metadata keys and path filters.
 
+`container` runs a backend inside an ephemeral OCI container. `Runner.Run`
+mirrors `harness.Run`'s signature; the workspace is bind-mounted at `/work`
+and an optional state directory at `/harness-state` so a later run can resume
+the session. `DetectRuntime` resolves docker, podman (rootful or rootless), or
+Apple's `container` CLI and applies each engine's flag differences
+(`--userns=keep-id`, `--progress none`, missing `--security-opt`). SELinux
+`:z` bind-mount relabeling is handled via `ResolveSELinuxRelabel`, and
+`VerifyKeepID` / `VerifySELinuxMount` are one-time startup smoke tests so a
+misconfigured host fails early instead of on every run.
+
 `egress` contains the authenticated allowlist proxy and
 `WriteSandboxSettings`, which writes Claude's `.claude/settings.json` domain
 allowlist.
