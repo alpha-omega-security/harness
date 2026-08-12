@@ -8,7 +8,7 @@ and event parser.
 
 ## Supported backends
 
-| Name | Binary | Credential environment | Skill directory | Project instructions | Model API hosts |
+| Name | Binary | Credential environment | Staged skill path | Project instructions | Model API hosts |
 | --- | --- | --- | --- | --- | --- |
 | `claude` | `claude` | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` | `.claude/skills/<name>` | `CLAUDE.md` | `*.anthropic.com` |
 | `codex` | `codex` | `CODEX_API_KEY` | `skills/<name>` | `AGENTS.md` | `api.openai.com`, `auth0.openai.com`, `chatgpt.com` |

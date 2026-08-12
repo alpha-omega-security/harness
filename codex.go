@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// CodexHarness drives Codex in headless exec mode. Codex discovers skills in
-// ./skills, reads AGENTS.md as project guidance, and stores resumable threads
-// under CODEX_HOME.
+// CodexHarness drives Codex in headless exec mode. Codex reads AGENTS.md as
+// project guidance and stores resumable threads under CODEX_HOME.
 type CodexHarness struct{}
 
 func (CodexHarness) Binary() string { return "codex" }
