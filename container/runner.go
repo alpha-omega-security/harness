@@ -18,8 +18,9 @@ import (
 const DefaultImage = "ghcr.io/alpha-omega-security/scrutineer-runner:latest"
 
 // tmpfsSpec is the /tmp tmpfs mount spec. HOME points here so backend session
-// files land in the container, not the host user's dotfiles.
-const tmpfsSpec = "/tmp:rw,noexec,nosuid,size=256m"
+// files land in the container, not the host user's dotfiles. The mount stays
+// executable because build tools such as Go run temporary binaries from it.
+const tmpfsSpec = "/tmp:rw,exec,nosuid,size=256m"
 
 // Fixed in-container mount points. The caller's Job.Workspace is mounted at
 // WorkMount and Runner.StateDir at StateMount; both stay writable under
@@ -156,7 +157,9 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 	args := r.Runtime.runArgs(
 		"--rm",
 		"--cap-drop", "ALL",
-		"--user", hostUser(),
+	)
+	args = appendHostUser(args)
+	args = append(args,
 		"-e", "HOME=/tmp",
 		"--tmpfs", tmpfsSpec,
 		"-v", bindMount(absWork, WorkMount, r.SELinuxRelabel),
@@ -164,11 +167,9 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 	)
 	// Backend env: model-API credential, base URL, and the backend's own
 	// telemetry / autoupdate suppressors. Bare keys pass the host's value
-	// through; expand them here so the value is set inside the container.
+	// through without putting secrets in the runtime process's argv. All
+	// supported runtimes inherit bare keys from the client environment.
 	for _, e := range append(h.Env(j.BaseURL), r.Env...) {
-		if !strings.ContainsRune(e, '=') {
-			e = e + "=" + os.Getenv(e)
-		}
 		args = append(args, "-e", e)
 	}
 	if r.Runtime.supportsHostGatewayAddHost() {
@@ -208,8 +209,8 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 		// Read-only rootfs + no-new-privileges close the residual paths a
 		// hostile workspace could use to escalate inside the container.
 		// WorkMount stays writable and /tmp is the tmpfs declared above.
-		// --cap-drop ALL and the non-root --user are already set
-		// unconditionally, in every mode.
+		// --cap-drop ALL is already set in every mode. Unix hosts also run
+		// with the invoking uid and gid.
 		args = append(args, "--read-only")
 		if r.Runtime.supportsNoNewPrivileges() {
 			args = append(args, "--security-opt", "no-new-privileges")
@@ -233,10 +234,4 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 		image = DefaultImage
 	}
 	return append(args, "--", image)
-}
-
-// hostUser returns the "uid:gid" string for --user so files written to bind
-// mounts stay owned by the invoking host user.
-func hostUser() string {
-	return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 }

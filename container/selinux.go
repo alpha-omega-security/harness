@@ -151,9 +151,9 @@ func bindMount(src, dst string, relabel bool, opts ...string) string {
 //
 // The probe seeds a host-written file the container must READ (the workspace
 // path) and has the container WRITE a file the host must READ BACK (the
-// output path), mirroring both directions a run needs, and reuses --user plus
-// (rootless) --userns=keep-id so it exercises the same uid mapping as a real
-// run.
+// output path), mirroring both directions a run needs, and reuses the host
+// user where available plus (rootless) --userns=keep-id so it exercises the
+// same uid mapping as a real run.
 func VerifySELinuxMount(ctx context.Context, rt Runtime, image string, relabel bool) error {
 	if !relabel {
 		return nil
@@ -174,7 +174,7 @@ func VerifySELinuxMount(ctx context.Context, rt Runtime, image string, relabel b
 	if rt.supportsPullNever() {
 		args = append(args, "--pull", "never")
 	}
-	args = append(args, "--user", hostUser())
+	args = appendHostUser(args)
 	if rt.NeedsKeepID() {
 		args = append(args, "--userns=keep-id")
 	}

@@ -25,9 +25,10 @@ const runtimePodman = "podman"
 // Runtime identifies the OCI engine the runner shells out to and the main
 // trait that changes the generated `run` flags: rootless podman maps
 // --user uid:gid through /etc/subuid, so files written to bind mounts land as
-// the wrong host uid unless --userns=keep-id is set. docker and rootful podman
-// both run the container process as the host uid directly, and Apple's
-// per-container VMs do not use podman's subuid remap, so they need no remap.
+// the wrong host uid unless --userns=keep-id is set. On Unix, docker and
+// rootful podman both run the container process as the host uid directly.
+// Apple's per-container VMs do not use podman's subuid remap, so they need no
+// remap.
 // The zero value is the docker runtime, so a bare Runner{} keeps shelling out
 // to "docker".
 type Runtime struct {

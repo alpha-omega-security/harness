@@ -49,9 +49,8 @@ func hasAdjacent(args []string, flag, val string) bool {
 
 func TestRunnerArgs_Baseline(t *testing.T) {
 	// The baseline flags are present in every mode across every runtime: capped
-	// caps, non-root user, HOME tmpfs, workspace bind mount, working dir, the
+	// caps, HOME tmpfs, workspace bind mount, working dir, the
 	// backend's telemetry suppressor, and the -- image terminator.
-	user := hostUser()
 	for _, r := range []Runner{
 		{},
 		{Runtime: Runtime{Bin: "podman", Rootless: true}},
@@ -63,7 +62,6 @@ func TestRunnerArgs_Baseline(t *testing.T) {
 		got := r.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
 		for _, pair := range [][2]string{
 			{"--cap-drop", "ALL"},
-			{"--user", user},
 			{"-e", "HOME=/tmp"},
 			{"--tmpfs", tmpfsSpec},
 			{"-v", "/abs/work:" + WorkMount},
@@ -80,6 +78,13 @@ func TestRunnerArgs_Baseline(t *testing.T) {
 		if got[len(got)-2] != "--" {
 			t.Errorf("%+v: missing -- terminator before image: %v", r, got)
 		}
+	}
+}
+
+func TestTmpfsSpecAllowsToolchainExecutables(t *testing.T) {
+	opts := strings.Split(tmpfsSpec, ",")
+	if strings.Contains(tmpfsSpec, "noexec") || !slices.Contains(opts, "exec") {
+		t.Errorf("tmpfsSpec %q prevents build tools from running temporary binaries", tmpfsSpec)
 	}
 }
 
@@ -183,11 +188,14 @@ func TestRunnerArgs_ExtraMountsAndEnv(t *testing.T) {
 	}
 }
 
-func TestRunnerArgs_EnvExpandsBareKeys(t *testing.T) {
+func TestRunnerArgs_EnvPreservesBareKeys(t *testing.T) {
 	t.Setenv("STUB_TOKEN", "sk-test")
 	got := Runner{Env: []string{"STUB_TOKEN"}}.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
-	if !hasAdjacent(got, "-e", "STUB_TOKEN=sk-test") {
-		t.Errorf("bare env key not expanded from host: %v", got)
+	if !hasAdjacent(got, "-e", "STUB_TOKEN") {
+		t.Errorf("bare env key not preserved for runtime passthrough: %v", got)
+	}
+	if hasAdjacent(got, "-e", "STUB_TOKEN=sk-test") {
+		t.Errorf("secret value exposed in runtime argv: %v", got)
 	}
 }
 
