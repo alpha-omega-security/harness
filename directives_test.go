@@ -13,7 +13,7 @@ func TestDirectivePaths(t *testing.T) {
 	t.Parallel()
 
 	dirs, files := DirectivePaths()
-	for _, want := range []string{".claude", ".opencode", "skills", ".cursor", ".aider.*"} {
+	for _, want := range []string{".claude", ".opencode", ".cursor", ".aider.*"} {
 		if !slices.Contains(dirs, want) {
 			t.Errorf("DirectivePaths dirs missing %q", want)
 		}
@@ -58,8 +58,6 @@ func TestStripDirectives(t *testing.T) {
 		"deploy.prompt.md":                           "remove",
 		".claude/settings.json":                      "remove",
 		".opencode/skill/evil/SKILL.md":              "remove",
-		"skills/evil/SKILL.md":                       "remove",
-		".github/skills/evil/SKILL.md":               "remove",
 		".github/copilot-instructions.md":            "remove",
 		".github/instructions/build.instructions.md": "remove",
 		"vendor/.cursor/rules/evil.mdc":              "remove",
@@ -70,8 +68,8 @@ func TestStripDirectives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StripDirectives: %v", err)
 	}
-	if removed != 13 {
-		t.Errorf("StripDirectives removed %d items, want 13", removed)
+	if removed != 11 {
+		t.Errorf("StripDirectives removed %d items, want 11", removed)
 	}
 
 	assertDirectiveTestExists(t, root, "README.md", "src/main.go", ".github")
@@ -83,8 +81,6 @@ func TestStripDirectives(t *testing.T) {
 		"deploy.prompt.md",
 		".claude",
 		".opencode",
-		"skills",
-		".github/skills",
 		".github/copilot-instructions.md",
 		".github/instructions/build.instructions.md",
 		"vendor/.cursor",
@@ -98,6 +94,34 @@ func TestStripDirectives(t *testing.T) {
 	if removed != 0 {
 		t.Errorf("second StripDirectives removed %d items, want 0", removed)
 	}
+}
+
+func TestStripDirectivesPreservesOrdinarySourceDirectories(t *testing.T) {
+	root := t.TempDir()
+	paths := []string{
+		"skills/x.go",
+		"commands/x.go",
+		"prompts/x.go",
+		"agents/x.go",
+		"rules/x.go",
+		"hooks/x.go",
+		".ai/x",
+		".llm/x",
+	}
+	files := make(map[string]string, len(paths))
+	for _, name := range paths {
+		files[name] = "kept"
+	}
+	writeDirectiveTestFiles(t, root, files)
+
+	removed, err := StripDirectives(root)
+	if err != nil {
+		t.Fatalf("StripDirectives: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("StripDirectives removed %d items, want 0", removed)
+	}
+	assertDirectiveTestExists(t, root, paths...)
 }
 
 func TestStripDirectivesPreservesGitAndBenignPaths(t *testing.T) {

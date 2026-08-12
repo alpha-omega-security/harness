@@ -15,7 +15,6 @@ var directiveDirs = []string{
 	// Harness backends.
 	".claude",
 	".opencode",
-	"skills",
 
 	// Other agent CLIs.
 	".anthropic",
