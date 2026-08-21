@@ -205,6 +205,16 @@ func (OpencodeHarness) Env(_ string) []string {
 		"OPENCODE_DISABLE_AUTOUPDATE=true",
 		"OPENCODE_DISABLE_MODELS_FETCH=true",
 		"OPENCODE_DISABLE_SHARE=true",
+		// OpenCode's server catch-all replaces uncaught defects with
+		// "Unexpected server error. Check server logs for details." and writes
+		// the cause via Effect.logError, which by default goes only to
+		// <XDG_DATA_HOME>/opencode/log/opencode.log. OPENCODE_PRINT_LOGS=1
+		// mirrors that logger to stderr so ParseStream (and the caller's scan
+		// log) receive the underlying error as text lines. The default level is
+		// Info, which would flood every successful run with startup and session
+		// bookkeeping; restricting to error keeps only the failure causes.
+		"OPENCODE_PRINT_LOGS=1",
+		"OPENCODE_LOG_LEVEL=error",
 	}
 	// OpenCode reads provider credentials from its auth config or the
 	// provider's environment. Pass through whichever form the caller set.

@@ -1,9 +1,21 @@
 package harness
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestOpencodeEnvMirrorsServerLogsToStderr(t *testing.T) {
+	t.Parallel()
+
+	env := OpencodeHarness{}.Env("")
+	for _, want := range []string{"OPENCODE_PRINT_LOGS=1", "OPENCODE_LOG_LEVEL=error"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("Env() = %v, missing %q", env, want)
+		}
+	}
+}
 
 func TestOpencodeStream(t *testing.T) {
 	t.Parallel()
