@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -136,11 +137,18 @@ type Proxy struct {
 	Token   string
 	APIPort string // only this port is allowed for APIHosts
 	// APIHosts identify a host service from inside a container. They are
-	// restricted to APIPort and rewritten to
+	// restricted to APIPort (plus HostPorts) and rewritten to
 	// 127.0.0.1 when the proxy dials upstream. Empty keeps the Docker/Podman
 	// default of HostGatewayAlias.
 	APIHosts []string
-	Log      *slog.Logger
+	// HostPorts are additional ports on APIHosts the container may reach
+	// beyond APIPort. dialTarget rewrites them to gatewayDialHost() the same
+	// way, so a container can reach a loopback-bound service on the host
+	// (Ollama on 11434, LM Studio on 1234) at HostGatewayAlias:<port>. Empty
+	// permits only APIPort; APIPort and HostPorts both empty denies every
+	// APIHost port.
+	HostPorts []string
+	Log       *slog.Logger
 	// GatewayDialHost overrides the address the proxy dials for the host skill
 	// API (requests whose host is HostGatewayAlias). The in-process host proxy
 	// leaves it "" and dials 127.0.0.1: it shares the host's loopback, so the
@@ -201,23 +209,24 @@ func (p *Proxy) checkAuth(r *http.Request) bool {
 	return ok && subtle.ConstantTimeCompare([]byte(pass), []byte(p.Token)) == 1
 }
 
-// apiHostGate rejects a request for an API host when APIPort is unset or the
-// request targets a different port. Without the empty-APIPort check, the
+// apiHostGate rejects a request for an API host when the port is neither
+// APIPort nor listed in HostPorts. Without the both-empty check, the
 // zero-value Proxy grants CONNECT host.docker.internal:<any>, dialTarget
 // rewrites that to 127.0.0.1:<any>, and the api-gateway path bypasses
 // egressIPControl — giving a container full host-loopback reach.
 func (p *Proxy) apiHostGate(w http.ResponseWriter, method, host, port string) bool {
-	switch {
-	case p.APIPort == "":
-		p.Log.Warn("egress denied", "method", method, "host", host, "reason", "APIPort unset")
-		http.Error(w, "egress to "+host+" is denied: APIPort not configured", http.StatusForbidden)
-		return false
-	case port != p.APIPort:
-		p.Log.Warn("egress denied", "method", method, "host", host, "port", port, "allowed_port", p.APIPort)
-		http.Error(w, "egress to "+host+" is only allowed on port "+p.APIPort, http.StatusForbidden)
+	if (p.APIPort != "" && port == p.APIPort) || slices.Contains(p.HostPorts, port) {
+		return true
+	}
+	allowed := slices.DeleteFunc(append([]string{p.APIPort}, p.HostPorts...), func(s string) bool { return s == "" })
+	if len(allowed) == 0 {
+		p.Log.Warn("egress denied", "method", method, "host", host, "reason", "no host port configured")
+		http.Error(w, "egress to "+host+" is denied: no host port configured", http.StatusForbidden)
 		return false
 	}
-	return true
+	p.Log.Warn("egress denied", "method", method, "host", host, "port", port, "allowed_ports", allowed)
+	http.Error(w, "egress to "+host+" is only allowed on port "+strings.Join(allowed, ","), http.StatusForbidden)
+	return false
 }
 
 func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {

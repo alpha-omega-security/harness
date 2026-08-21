@@ -489,6 +489,58 @@ func TestEgressProxy_ConnectEndToEnd(t *testing.T) {
 	}
 }
 
+func TestEgressProxy_HostPortsReachLoopbackService(t *testing.T) {
+	// A local model server (Ollama, LM Studio) listens on the host loopback.
+	// HostPorts opens exactly that port on the gateway alias, alongside the
+	// caller's own APIPort, and the request is rewritten to 127.0.0.1:<port>.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "local-model")
+	}))
+	defer upstream.Close()
+	_, modelPort, _ := net.SplitHostPort(upstream.Listener.Addr().String())
+
+	p := &Proxy{
+		Allow:     []string{HostGatewayAlias},
+		APIPort:   "8080",
+		HostPorts: []string{modelPort},
+		Log:       quietLog(),
+	}
+	target := "http://" + net.JoinHostPort(HostGatewayAlias, modelPort) + "/v1/chat"
+	r := httptest.NewRequest("GET", target, nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || w.Body.String() != "local-model" {
+		t.Fatalf("host port forward: got %d %q", w.Code, w.Body.String())
+	}
+
+	// A port that is neither APIPort nor in HostPorts stays closed.
+	r = httptest.NewRequest(http.MethodConnect, HostGatewayAlias+":22", nil)
+	w = httptest.NewRecorder()
+	p.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unlisted host port: got %d, want 403", w.Code)
+	}
+
+	// HostPorts alone (APIPort unset) is a deliberate grant, not the
+	// zero-value fail-closed path.
+	p = &Proxy{Allow: []string{HostGatewayAlias}, HostPorts: []string{"11434"}, Log: quietLog()}
+	r = httptest.NewRequest(http.MethodConnect, HostGatewayAlias+":11434", nil)
+	w = httptest.NewRecorder()
+	p.ServeHTTP(w, r)
+	if w.Code == http.StatusForbidden {
+		t.Fatalf("HostPorts-only grant refused: %s", w.Body)
+	}
+
+	// Zero-value: neither APIPort nor HostPorts — every gateway port denied.
+	p = &Proxy{Allow: []string{HostGatewayAlias}, Log: quietLog()}
+	r = httptest.NewRequest(http.MethodConnect, HostGatewayAlias+":11434", nil)
+	w = httptest.NewRecorder()
+	p.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("zero-value gateway port: got %d, want 403", w.Code)
+	}
+}
+
 func TestEgressProxy_DeniesGatewayOnWrongPort(t *testing.T) {
 	p := &Proxy{
 		Allow:   []string{HostGatewayAlias},
