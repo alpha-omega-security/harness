@@ -225,7 +225,7 @@ func (p *Proxy) apiHostGate(w http.ResponseWriter, method, host, port string) bo
 		return false
 	}
 	p.Log.Warn("egress denied", "method", method, "host", host, "port", port, "allowed_ports", allowed)
-	http.Error(w, "egress to "+host+" is only allowed on port "+strings.Join(allowed, ","), http.StatusForbidden)
+	http.Error(w, "egress to "+host+" port "+port+" is denied; allowed: "+strings.Join(allowed, ", "), http.StatusForbidden)
 	return false
 }
 
