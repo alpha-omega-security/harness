@@ -76,16 +76,18 @@ func TestRun(t *testing.T) {
 }
 
 func TestRunAccountError(t *testing.T) {
-	err := Run(t.Context(), runTestHarness{}, Job{
-		Workspace: t.TempDir(),
-		Prompt:    "account",
-	}, nil)
-	var accountErr *AccountError
-	if err == nil || !strings.Contains(err.Error(), "quota exceeded") {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if !asAccountError(err, &accountErr) {
-		t.Fatalf("Run() returned %T, want *AccountError", err)
+	for _, prompt := range []string{"account", "account-json"} {
+		err := Run(t.Context(), runTestHarness{}, Job{
+			Workspace: t.TempDir(),
+			Prompt:    prompt,
+		}, nil)
+		var accountErr *AccountError
+		if err == nil || !strings.Contains(err.Error(), "quota exceeded") {
+			t.Fatalf("Run(%q) error = %v", prompt, err)
+		}
+		if !asAccountError(err, &accountErr) {
+			t.Fatalf("Run(%q) returned %T, want *AccountError", prompt, err)
+		}
 	}
 }
 
@@ -104,6 +106,11 @@ func TestRunHelperProcess(t *testing.T) {
 	prompt := os.Args[len(os.Args)-1]
 	if prompt == "account" {
 		_, _ = fmt.Fprintln(os.Stderr, "quota exceeded")
+		os.Exit(2)
+	}
+	if prompt == "account-json" {
+		encoded, _ := json.Marshal(Event{Kind: KindError, Text: "quota exceeded"})
+		_, _ = fmt.Println(string(encoded))
 		os.Exit(2)
 	}
 	event := Event{Kind: KindText, Text: os.Getenv("HARNESS_RUN_VALUE")}

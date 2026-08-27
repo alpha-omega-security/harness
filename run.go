@@ -39,8 +39,16 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 	cmd.Stderr = io.MultiWriter(writer, &stderr)
 
 	parseDone := make(chan struct{})
+	// JSON-output backends may report provider failures on stdout rather than
+	// stderr, so retain parsed error events for account classification.
+	var parsedErrors []string
 	go func() {
-		h.ParseStream(reader, emit)
+		h.ParseStream(reader, func(event Event) {
+			if event.Kind == KindError && event.Text != "" {
+				parsedErrors = append(parsedErrors, event.Text)
+			}
+			emit(event)
+		})
 		close(parseDone)
 	}()
 
@@ -55,7 +63,11 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 	if runErr == nil {
 		return nil
 	}
-	if detail := h.AccountErrorText(stderr.String()); detail != "" {
+	detail := h.AccountErrorText(stderr.String())
+	for _, text := range parsedErrors {
+		detail = PreferAccountErrorText(detail, h.AccountErrorText(text))
+	}
+	if detail != "" {
 		return &AccountError{Detail: detail}
 	}
 	return fmt.Errorf("harness: %s: %w", h.Binary(), runErr)
