@@ -18,6 +18,11 @@ and event parser.
 The Copilot parser targets CLI 1.0.75 or later, where
 `--output-format json` emits JSONL in prompt mode.
 
+For Copilot BYOK runs, `Job.BaseURL` sets `COPILOT_PROVIDER_BASE_URL` and
+`Harness.Env` passes through the configured `COPILOT_MODEL` and
+`COPILOT_PROVIDER_*` credentials and wire settings as bare keys, so container
+and remote runners can inject their values without placing secrets in argv.
+
 The library owns the details that differ between CLIs: binary names, arguments,
 credential and state environment variables, project instruction files, skill
 directories, model API hosts, JSONL parsing, account-limit errors, default

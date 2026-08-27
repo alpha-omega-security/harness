@@ -36,6 +36,27 @@ func TestCopilotArgs(t *testing.T) {
 	}
 }
 
+func TestCopilotEnvBYOKPassthrough(t *testing.T) {
+	t.Setenv("COPILOT_PROVIDER_API_KEY", "secret")
+	t.Setenv("COPILOT_MODEL", "gpt-5.6-sol")
+
+	env := CopilotHarness{}.Env("https://byok.example.com")
+	for _, want := range []string{
+		"COPILOT_PROVIDER_BASE_URL=https://byok.example.com",
+		"COPILOT_PROVIDER_API_KEY",
+		"COPILOT_MODEL",
+	} {
+		if !slices.Contains(env, want) {
+			t.Errorf("Env() missing %q: %v", want, env)
+		}
+	}
+	for _, entry := range (CopilotHarness{}).Env("") {
+		if strings.HasPrefix(entry, "COPILOT_PROVIDER_") || entry == "COPILOT_MODEL" {
+			t.Errorf("Env(\"\") passed BYOK setting %q", entry)
+		}
+	}
+}
+
 func TestCopilotStreamFixture(t *testing.T) {
 	t.Parallel()
 

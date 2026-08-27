@@ -246,8 +246,27 @@ func (CopilotHarness) Env(baseURL string) []string {
 	env = append(env, passthroughEnv("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")...)
 	if baseURL != "" {
 		env = append(env, "COPILOT_PROVIDER_BASE_URL="+baseURL)
+		env = append(env, passthroughEnv(copilotBYOKEnv...)...)
 	}
 	return env
+}
+
+// copilotBYOKEnv are Copilot's bring-your-own-key provider settings, passed
+// through as bare keys so container and remote runners can inject their values
+// without placing secrets in argv.
+var copilotBYOKEnv = []string{
+	"COPILOT_MODEL",
+	"COPILOT_PROVIDER_API_KEY",
+	"COPILOT_PROVIDER_BEARER_TOKEN",
+	"COPILOT_PROVIDER_TYPE",
+	"COPILOT_PROVIDER_WIRE_API",
+	"COPILOT_PROVIDER_TRANSPORT",
+	"COPILOT_PROVIDER_AZURE_API_VERSION",
+	"COPILOT_PROVIDER_MODEL_ID",
+	"COPILOT_PROVIDER_WIRE_MODEL",
+	"COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
+	"COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
+	"COPILOT_PROVIDER_HEADERS",
 }
 
 func (CopilotHarness) StateEnv(dir string) []string {
