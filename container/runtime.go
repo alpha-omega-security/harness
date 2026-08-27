@@ -308,7 +308,11 @@ func (rt Runtime) HostLoopbackBackendLikely() bool {
 	return podmanPastaDefault(rt.Version)
 }
 
-// imageExistsLocally reports whether tag is in the runtime's local image cache.
+// imageExistsLocally reports whether tag is in the runtime's local image
+// cache. Apple's container CLI has no `image inspect`; the callers
+// (VerifyKeepID, VerifySELinuxMount) are podman- and Linux-only respectively,
+// so this is never reached on Apple and would fail safe (skip the smoke test)
+// if it were.
 func imageExistsLocally(ctx context.Context, rt Runtime, tag string) bool {
 	return exec.CommandContext(ctx, rt.bin(), "image", "inspect", tag).Run() == nil
 }

@@ -113,8 +113,9 @@ func (r Runner) Run(ctx context.Context, h harness.Harness, j harness.Job, emit 
 	args = append(args, h.Args(cj)...)
 
 	cmd := exec.CommandContext(ctx, r.Runtime.bin(), args...)
-	// The container receives its full environment via -e; the host process
-	// only needs a PATH to find the runtime binary.
+	// The runtime client inherits the full host environment: bare -e KEY
+	// entries pick up their values from it, and DOCKER_HOST / CONTAINER_HOST
+	// / XDG_RUNTIME_DIR select a non-default engine socket.
 	cmd.Env = os.Environ()
 	prepareProcessGroup(cmd)
 	cmd.Cancel = func() error {
@@ -146,8 +147,27 @@ func (r Runner) Run(ctx context.Context, h harness.Harness, j harness.Job, emit 
 	if detail := h.AccountErrorText(stderr.String()); detail != "" {
 		return &harness.AccountError{Detail: detail}
 	}
+	// Unlike harness.Run, the tail of stderr is included: a container-runtime
+	// failure (image pull, mount permission, cgroup) puts the actionable
+	// message there and runErr alone is just "exit status 125".
 	return fmt.Errorf("container: %s %s: %w: %s", r.Runtime.bin(), h.Binary(), runErr,
-		strings.TrimSpace(stderr.String()))
+		tailStderr(stderr.String()))
+}
+
+// stderrTailLimit caps how much stderr is appended to a returned error so a
+// runaway backend cannot balloon the error string a caller logs.
+const stderrTailLimit = 4096
+
+func tailStderr(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= stderrTailLimit {
+		return s
+	}
+	tail := s[len(s)-stderrTailLimit:]
+	if nl := strings.IndexByte(tail, '\n'); nl >= 0 && nl < len(tail)-1 {
+		tail = tail[nl+1:]
+	}
+	return "[...] " + tail
 }
 
 // args builds the container-run argv up to and including the image name. j is

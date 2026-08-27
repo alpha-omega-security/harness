@@ -114,15 +114,15 @@ func TestRunnerArgs_RuntimeVariants(t *testing.T) {
 		{Runtime{Bin: "apple"}, false, false, true},
 	}
 	for _, tc := range tests {
-		got := Runner{Runtime: tc.rt}.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
-		if hasAdjacent(got, "--add-host", egress.HostGatewayAlias+":host-gateway") != tc.addHost {
-			t.Errorf("%+v: --add-host presence = %v, want %v: %v", tc.rt, !tc.addHost, tc.addHost, got)
+		args := Runner{Runtime: tc.rt}.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
+		if got := hasAdjacent(args, "--add-host", egress.HostGatewayAlias+":host-gateway"); got != tc.addHost {
+			t.Errorf("%+v: --add-host presence = %v, want %v: %v", tc.rt, got, tc.addHost, args)
 		}
-		if slices.Contains(got, "--userns=keep-id") != tc.keepID {
-			t.Errorf("%+v: --userns=keep-id presence = %v, want %v: %v", tc.rt, !tc.keepID, tc.keepID, got)
+		if got := slices.Contains(args, "--userns=keep-id"); got != tc.keepID {
+			t.Errorf("%+v: --userns=keep-id presence = %v, want %v: %v", tc.rt, got, tc.keepID, args)
 		}
-		if hasAdjacent(got, "--progress", "none") != tc.hasProgress {
-			t.Errorf("%+v: --progress none presence wrong: %v", tc.rt, got)
+		if got := hasAdjacent(args, "--progress", "none"); got != tc.hasProgress {
+			t.Errorf("%+v: --progress none presence = %v, want %v: %v", tc.rt, got, tc.hasProgress, args)
 		}
 	}
 }
@@ -215,7 +215,7 @@ func TestRunnerArgs_Network(t *testing.T) {
 	if !hasAdjacent(proxied, "-e", "NO_PROXY=") {
 		t.Errorf("proxy: expected -e NO_PROXY=: %v", proxied)
 	}
-	if slices.Contains(proxied, "none") {
+	if hasAdjacent(proxied, "--network", "none") {
 		t.Errorf("proxy: must not set --network none: %v", proxied)
 	}
 	// Named network -> --network <name>, no --network none. Proxy env applies
@@ -266,6 +266,25 @@ func TestRunnerArgs_BaseURL(t *testing.T) {
 	got := Runner{}.args(stubHarness{}, harness.Job{Workspace: WorkMount, BaseURL: "http://gw:8081"}, "/abs/work")
 	if !hasAdjacent(got, "-e", "STUB_BASE_URL=http://gw:8081") {
 		t.Errorf("expected Env(BaseURL) in %v", got)
+	}
+}
+
+func TestTailStderr(t *testing.T) {
+	short := "one line\ntwo lines"
+	if got := tailStderr("  " + short + "  "); got != short {
+		t.Errorf("tailStderr(short) = %q, want trimmed input", got)
+	}
+	body := strings.Repeat("noise noise noise\n", 400)
+	long := body + "penultimate line\nactionable message"
+	got := tailStderr(long)
+	if len(got) > stderrTailLimit+len("[...] ") {
+		t.Errorf("tailStderr(long) length = %d, want <= %d", len(got), stderrTailLimit+len("[...] "))
+	}
+	if !strings.HasPrefix(got, "[...] ") || !strings.HasSuffix(got, "actionable message") {
+		t.Errorf("tailStderr(long) = %q, want [...] prefix and last line intact", got)
+	}
+	if strings.HasPrefix(strings.TrimPrefix(got, "[...] "), "oise") {
+		t.Errorf("tailStderr(long) = %q, want cut at a line boundary", got)
 	}
 }
 
