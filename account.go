@@ -93,15 +93,17 @@ func AccountErrorResumable(s string) bool {
 }
 
 // PreferAccountErrorText keeps the first account error unless a later message
-// identifies revoked access. This prevents a permanent failure from being
-// scheduled for retry because an earlier line happened to describe a limit.
+// is non-resumable while the earlier one is a transient limit. Keying on
+// AccountErrorResumable rather than the shared revoked-phrase list means a
+// backend-local permanent phrase such as "invalid_api_key" still displaces an
+// earlier "rate limit", so a permanent failure is never scheduled for retry.
 func PreferAccountErrorText(current, candidate string) string {
 	switch {
 	case candidate == "":
 		return current
 	case current == "":
 		return candidate
-	case accountErrorAccessRevoked(candidate) && !accountErrorAccessRevoked(current):
+	case !AccountErrorResumable(candidate) && AccountErrorResumable(current):
 		return candidate
 	default:
 		return current
