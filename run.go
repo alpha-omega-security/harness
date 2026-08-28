@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,9 +19,6 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 	if j.Workspace == "" {
 		return fmt.Errorf("harness: workspace is required")
 	}
-	if emit == nil {
-		emit = func(Event) {}
-	}
 	if err := WriteSystemPrompt(h, j); err != nil {
 		return err
 	}
@@ -28,15 +26,38 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 	cmd := exec.CommandContext(ctx, h.Binary(), h.Args(j)...)
 	cmd.Dir = j.Workspace
 	cmd.Env = mergeEnv(os.Environ(), expandEnv(h.Env(j.BaseURL)))
+
+	if _, err := StreamCmd(cmd, h, emit); err != nil {
+		var accountErr *AccountError
+		if errors.As(err, &accountErr) {
+			return err
+		}
+		return fmt.Errorf("harness: %s: %w", h.Binary(), err)
+	}
+	return nil
+}
+
+// StreamCmd starts cmd, streams its combined output through h.ParseStream to
+// emit, and returns after the process exits and parsing completes. It sets
+// cmd.SysProcAttr and cmd.Cancel so context cancellation SIGTERMs the process
+// group instead of orphaning children. On non-zero exit it classifies stderr
+// and any parsed KindError event via h.AccountErrorText and returns an
+// *AccountError on a match; otherwise it returns the raw exec error unwrapped
+// so the caller can add its own context. stderr is returned so a caller can
+// include a runtime failure message in that error.
+func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err error) {
+	if emit == nil {
+		emit = func(Event) {}
+	}
 	prepareProcessGroup(cmd)
 	cmd.Cancel = func() error {
 		return terminateProcessGroup(cmd.Process)
 	}
 
 	reader, writer := io.Pipe()
-	var stderr strings.Builder
+	var stderrBuf strings.Builder
 	cmd.Stdout = writer
-	cmd.Stderr = io.MultiWriter(writer, &stderr)
+	cmd.Stderr = io.MultiWriter(writer, &stderrBuf)
 
 	parseDone := make(chan struct{})
 	// JSON-output backends may report provider failures on stdout rather than
@@ -55,22 +76,23 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 	if err := cmd.Start(); err != nil {
 		_ = writer.Close()
 		<-parseDone
-		return fmt.Errorf("harness: start %s: %w", h.Binary(), err)
+		return "", err
 	}
 	runErr := cmd.Wait()
 	_ = writer.Close()
 	<-parseDone
+	stderr = stderrBuf.String()
 	if runErr == nil {
-		return nil
+		return stderr, nil
 	}
-	detail := h.AccountErrorText(stderr.String())
+	detail := h.AccountErrorText(stderr)
 	for _, text := range parsedErrors {
 		detail = PreferAccountErrorText(detail, h.AccountErrorText(text))
 	}
 	if detail != "" {
-		return &AccountError{Detail: detail}
+		return stderr, &AccountError{Detail: detail}
 	}
-	return fmt.Errorf("harness: %s: %w", h.Binary(), runErr)
+	return stderr, runErr
 }
 
 func expandEnv(entries []string) []string {

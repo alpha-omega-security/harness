@@ -2,8 +2,8 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,9 +86,6 @@ func (r Runner) Run(ctx context.Context, h harness.Harness, j harness.Job, emit 
 	if j.Workspace == "" {
 		return fmt.Errorf("container: workspace is required")
 	}
-	if emit == nil {
-		emit = func(harness.Event) {}
-	}
 	if err := harness.WriteSystemPrompt(h, j); err != nil {
 		return err
 	}
@@ -117,41 +114,23 @@ func (r Runner) Run(ctx context.Context, h harness.Harness, j harness.Job, emit 
 	// entries pick up their values from it, and DOCKER_HOST / CONTAINER_HOST
 	// / XDG_RUNTIME_DIR select a non-default engine socket.
 	cmd.Env = os.Environ()
-	prepareProcessGroup(cmd)
-	cmd.Cancel = func() error {
-		return terminateProcessGroup(cmd.Process)
-	}
 
-	reader, writer := io.Pipe()
-	var stderr strings.Builder
-	cmd.Stdout = writer
-	cmd.Stderr = io.MultiWriter(writer, &stderr)
-
-	parseDone := make(chan struct{})
-	go func() {
-		h.ParseStream(reader, emit)
-		close(parseDone)
-	}()
-
-	if err := cmd.Start(); err != nil {
-		_ = writer.Close()
-		<-parseDone
-		return fmt.Errorf("container: start %s: %w", r.Runtime.bin(), err)
-	}
-	runErr := cmd.Wait()
-	_ = writer.Close()
-	<-parseDone
-	if runErr == nil {
+	stderr, err := harness.StreamCmd(cmd, h, emit)
+	if err == nil {
 		return nil
 	}
-	if detail := h.AccountErrorText(stderr.String()); detail != "" {
-		return &harness.AccountError{Detail: detail}
+	var accountErr *harness.AccountError
+	if errors.As(err, &accountErr) {
+		return err
 	}
 	// Unlike harness.Run, the tail of stderr is included: a container-runtime
 	// failure (image pull, mount permission, cgroup) puts the actionable
-	// message there and runErr alone is just "exit status 125".
-	return fmt.Errorf("container: %s %s: %w: %s", r.Runtime.bin(), h.Binary(), runErr,
-		tailStderr(stderr.String()))
+	// message there and err alone is just "exit status 125".
+	wrapped := fmt.Errorf("container: %s %s: %w", r.Runtime.bin(), h.Binary(), err)
+	if tail := tailStderr(stderr); tail != "" {
+		return fmt.Errorf("%w: %s", wrapped, tail)
+	}
+	return wrapped
 }
 
 // stderrTailLimit caps how much stderr is appended to a returned error so a
