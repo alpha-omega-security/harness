@@ -121,7 +121,7 @@ func WriteSystemPrompt(h Harness, j Job) error {
 		return fmt.Errorf("harness: invalid guide filename %q", guide)
 	}
 	if err := os.MkdirAll(j.Workspace, guideDirMode); err != nil {
-		return fmt.Errorf("harness: create guide directory: %w", err)
+		return fmt.Errorf("harness: create workspace: %w", err)
 	}
 	root, err := os.OpenRoot(j.Workspace)
 	if err != nil {
