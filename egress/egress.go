@@ -251,6 +251,7 @@ func (p *Proxy) serveConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	p.Log.Info("egress allowed", "method", "CONNECT", "host", host, "port", port)
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		_ = upstream.Close()
@@ -297,6 +298,7 @@ func (p *Proxy) serveForward(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	p.Log.Info("egress allowed", "method", r.Method, "host", host, "port", port)
 	defer func() { _ = resp.Body.Close() }()
 	stripHopByHop(resp.Header)
 	maps.Copy(w.Header(), resp.Header)

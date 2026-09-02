@@ -205,6 +205,33 @@ func TestEgressProxy_ForwardDenied(t *testing.T) {
 	}
 }
 
+func TestEgressProxy_LogsAllowAndDenyDecisions(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	host, port, _ := net.SplitHostPort(upstream.Listener.Addr().String())
+
+	var logs strings.Builder
+	p := &Proxy{
+		Allow:           []string{HostGatewayAlias},
+		APIPort:         port,
+		GatewayDialHost: host,
+		Log:             slog.New(slog.NewTextHandler(&logs, nil)),
+	}
+	allowed := httptest.NewRequest(http.MethodGet, "http://"+net.JoinHostPort(HostGatewayAlias, port)+"/", nil)
+	p.ServeHTTP(httptest.NewRecorder(), allowed)
+	denied := httptest.NewRequest(http.MethodGet, "http://blocked.test/", nil)
+	p.ServeHTTP(httptest.NewRecorder(), denied)
+
+	got := logs.String()
+	for _, want := range []string{`msg="egress allowed"`, `msg="egress denied"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("proxy log missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestEgressProxy_DeniesNonPublicResolvedIP(t *testing.T) {
 	for _, host := range []string{"127.0.0.1", "10.0.0.1"} {
 		for _, method := range []string{http.MethodConnect, http.MethodGet} {

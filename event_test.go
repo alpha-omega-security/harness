@@ -66,6 +66,14 @@ func TestRateLimitInfo(t *testing.T) {
 	}
 }
 
+func TestFormatEgressEvent(t *testing.T) {
+	t.Parallel()
+
+	if got := FormatEvent(Event{Kind: KindEgress, Text: "proxy denied blocked.test"}); got != "[egress] proxy denied blocked.test" {
+		t.Errorf("FormatEvent() = %q", got)
+	}
+}
+
 func TestCostFromUsage(t *testing.T) {
 	t.Parallel()
 

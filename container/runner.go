@@ -2,11 +2,6 @@ package container
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/alpha-omega-security/harness"
@@ -55,6 +50,14 @@ type Runner struct {
 	// Env are additional -e entries beyond h.Env(j.BaseURL). Bare keys pass
 	// the host's value through, matching [harness.Run].
 	Env []string
+	// OmitEnv removes matching keys from h.Env(j.BaseURL) before Env is added.
+	// It lets a caller replace inherited backend credentials with scoped ones.
+	OmitEnv []string
+	// ProcessEnv overrides the environment of workload container-runtime
+	// clients started by Run and RunCommand. Use it with bare keys in Env to
+	// pass per-run credentials without putting their values in the runtime argv.
+	// Entries must have KEY=value form.
+	ProcessEnv []string
 	// ProxyURL is set as HTTPS_PROXY/HTTP_PROXY/ALL_PROXY inside the
 	// container. When empty and Network is empty, --network none is used so a
 	// misconfigured caller fails closed rather than granting open egress.
@@ -66,6 +69,15 @@ type Runner struct {
 	// set, the caller owns egress enforcement (typically a --internal network
 	// paired with a proxy sidecar). Empty defers to ProxyURL.
 	Network string
+	// Hardened creates a private --internal network for Run or Open. Run removes
+	// it after its invocation; a Scope removes it on Close. Rootless podman and
+	// Docker Desktop get an egress proxy sidecar configured by Sidecar. Other
+	// runtimes reach the caller's ProxyURL through the network gateway. Hardened
+	// implies ReadOnly and cannot be combined with Network.
+	Hardened bool
+	// Sidecar configures the per-run egress proxy used by rootless podman and
+	// Docker Desktop. Other runtimes reach ProxyURL across an internal network.
+	Sidecar SidecarConfig
 	// ReadOnly enables --read-only rootfs and (where supported)
 	// --security-opt no-new-privileges. WorkMount, StateMount, and /tmp stay
 	// writable.
@@ -80,57 +92,18 @@ type Runner struct {
 // backend's guide file on the host before starting the container, matching
 // [harness.Run].
 func (r Runner) Run(ctx context.Context, h harness.Harness, j harness.Job, emit func(harness.Event)) error {
-	if h == nil {
-		return fmt.Errorf("container: backend is required")
-	}
-	if j.Workspace == "" {
-		return fmt.Errorf("container: workspace is required")
+	if err := validateJob(h, j); err != nil {
+		return err
 	}
 	if err := harness.WriteSystemPrompt(h, j); err != nil {
 		return err
 	}
-
-	absWork, err := filepath.Abs(j.Workspace)
+	scope, err := r.Open(ctx, h)
 	if err != nil {
-		return fmt.Errorf("container: workspace: %w", err)
-	}
-	if r.StateDir != "" {
-		if r.StateDir, err = filepath.Abs(r.StateDir); err != nil {
-			return fmt.Errorf("container: state dir: %w", err)
-		}
-	}
-
-	// The backend runs against the fixed in-container paths; every other Job
-	// field is workspace-relative and passes through unchanged.
-	cj := j
-	cj.Workspace = WorkMount
-
-	args := r.args(h, cj, absWork)
-	args = append(args, h.Binary())
-	args = append(args, h.Args(cj)...)
-
-	cmd := exec.CommandContext(ctx, r.Runtime.bin(), args...)
-	// The runtime client inherits the full host environment: bare -e KEY
-	// entries pick up their values from it, and DOCKER_HOST / CONTAINER_HOST
-	// / XDG_RUNTIME_DIR select a non-default engine socket.
-	cmd.Env = os.Environ()
-
-	stderr, err := harness.StreamCmd(cmd, h, emit)
-	if err == nil {
-		return nil
-	}
-	var accountErr *harness.AccountError
-	if errors.As(err, &accountErr) {
 		return err
 	}
-	// Unlike harness.Run, the tail of stderr is included: a container-runtime
-	// failure (image pull, mount permission, cgroup) puts the actionable
-	// message there and err alone is just "exit status 125".
-	wrapped := fmt.Errorf("container: %s %s: %w", r.Runtime.bin(), h.Binary(), err)
-	if tail := tailStderr(stderr); tail != "" {
-		return fmt.Errorf("%w: %s", wrapped, tail)
-	}
-	return wrapped
+	defer scope.Close(emit)
+	return scope.run(ctx, j, emit)
 }
 
 // stderrTailLimit caps how much stderr is appended to a returned error so a
@@ -153,6 +126,10 @@ func tailStderr(s string) string {
 // the in-container view of the job (j.Workspace == WorkMount); absWork is the
 // host workspace path bound there.
 func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string {
+	return r.argsAt(h, j, absWork, WorkMount)
+}
+
+func (r Runner) argsAt(h harness.Harness, j harness.Job, absWork, workDir string, entrypoint ...string) []string {
 	args := r.Runtime.runArgs(
 		"--rm",
 		"--cap-drop", "ALL",
@@ -162,13 +139,13 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 		"-e", "HOME=/tmp",
 		"--tmpfs", tmpfsSpec,
 		"-v", bindMount(absWork, WorkMount, r.SELinuxRelabel),
-		"-w", WorkMount,
+		"-w", workDir,
 	)
 	// Backend env: model-API credential, base URL, and the backend's own
 	// telemetry / autoupdate suppressors. Bare keys pass the host's value
 	// through without putting secrets in the runtime process's argv. All
 	// supported runtimes inherit bare keys from the client environment.
-	for _, e := range append(h.Env(j.BaseURL), r.Env...) {
+	for _, e := range r.containerEnv(h, j.BaseURL) {
 		args = append(args, "-e", e)
 	}
 	if r.Runtime.supportsHostGatewayAddHost() {
@@ -220,17 +197,36 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 	}
 	if r.ProxyURL != "" {
 		args = append(args,
-			"-e", "HTTPS_PROXY="+r.ProxyURL,
-			"-e", "HTTP_PROXY="+r.ProxyURL,
-			"-e", "ALL_PROXY="+r.ProxyURL,
-			"-e", "NO_PROXY=",
+			"-e", "HTTPS_PROXY",
+			"-e", "HTTP_PROXY",
+			"-e", "ALL_PROXY",
+			"-e", "NO_PROXY",
 		)
 	} else if r.Network == "" {
 		args = append(args, "--network", "none")
+	}
+	if len(entrypoint) > 0 {
+		args = append(args, "--entrypoint", entrypoint[0])
 	}
 	image := r.Image
 	if image == "" {
 		image = DefaultImage
 	}
 	return append(args, "--", image)
+}
+
+func (r Runner) containerEnv(h harness.Harness, baseURL string) []string {
+	omit := make(map[string]bool, len(r.OmitEnv))
+	for _, key := range r.OmitEnv {
+		omit[key] = true
+	}
+	backendEnv := h.Env(baseURL)
+	env := make([]string, 0, len(backendEnv)+len(r.Env))
+	for _, entry := range backendEnv {
+		key, _, _ := strings.Cut(entry, "=")
+		if !omit[key] {
+			env = append(env, entry)
+		}
+	}
+	return append(env, r.Env...)
 }

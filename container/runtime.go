@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -32,8 +33,9 @@ const runtimePodman = "podman"
 // The zero value is the docker runtime, so a bare Runner{} keeps shelling out
 // to "docker".
 type Runtime struct {
-	Bin      string // "docker", "podman", or "apple"; "" means docker
-	Rootless bool   // true only for rootless podman
+	Bin           string // "docker", "podman", or "apple"; "" means docker
+	Rootless      bool   // true only for rootless podman
+	DockerDesktop bool   // true when the detected docker daemon is Docker Desktop
 	// Version is the engine version captured at detection (e.g. "4.9.4").
 	// Best-effort and only used for the startup host-gateway check; "" when
 	// unknown.
@@ -64,28 +66,45 @@ func (rt Runtime) NeedsKeepID() bool {
 }
 
 // NeedsHardenedNetVerify reports whether a hardened run must prove its
-// per-run --internal network fail-closed before running. True for rootless
-// podman and for Apple's container runtime. Rootless podman's
+// per-run --internal network fail-closed before running. True for runtimes
+// that use a sidecar and for Apple's container runtime. Rootless podman's
 // pasta/slirp4netns host path is what varies across backends and what
 // --internal can sever. Apple's vmnet host-only network has the right
 // semantics (egress blocked, host reachable) but the implementation has known
 // rough edges, and this is a security boundary, so it is proven per run
 // rather than assumed. docker and rootful podman both run a bridge in the
-// host netns (gateway on the host), so they keep the trusted path and pay no
-// probe cost.
+// host netns (gateway on the host), so Linux docker and rootful podman keep the
+// trusted path and pay no probe cost.
 func (rt Runtime) NeedsHardenedNetVerify() bool {
-	return rt.Bin == runtimeApple || (rt.Bin == runtimePodman && rt.Rootless)
+	return rt.Bin == runtimeApple || rt.NeedsEgressSidecar()
 }
 
 // NeedsEgressSidecar reports whether hardened egress runs through a per-run
-// proxy sidecar rather than an in-process host proxy. True only for rootless
-// podman, where the host proxy is unreachable across the --internal boundary.
-// It is deliberately narrower than NeedsHardenedNetVerify (which also covers
-// Apple): Apple keeps the host proxy, reached via the per-run gateway, and
-// its CLI has neither `--network podman` nor `network connect`, so it must
-// not take the sidecar path even though it still needs the per-run --internal
-// verification.
+// proxy sidecar rather than an in-process host proxy. Rootless podman and
+// Docker Desktop cannot reach a host proxy across the --internal boundary.
+// Apple keeps the host proxy, reached through the per-run gateway.
 func (rt Runtime) NeedsEgressSidecar() bool {
+	return (rt.Bin == runtimePodman && rt.Rootless) || rt.isDockerDesktop()
+}
+
+func (rt Runtime) isDockerDesktop() bool {
+	if rt.bin() != "docker" {
+		return false
+	}
+	if rt.Version != "" {
+		return rt.DockerDesktop
+	}
+	return rt.DockerDesktop || runtime.GOOS != "linux"
+}
+
+func (rt Runtime) sidecarEgressNetwork() string {
+	if rt.bin() == "docker" {
+		return "bridge"
+	}
+	return "podman"
+}
+
+func (rt Runtime) needsInternalDNSDisabled() bool {
 	return rt.Bin == runtimePodman && rt.Rootless
 }
 
@@ -95,6 +114,13 @@ func (rt Runtime) NeedsEgressSidecar() bool {
 // address instead.
 func (rt Runtime) supportsHostGatewayAddHost() bool {
 	return rt.Bin != runtimeApple
+}
+
+func (rt Runtime) hostGatewayProbeNetwork(network string) string {
+	if rt.isDockerDesktop() {
+		return ""
+	}
+	return network
 }
 
 // supportsPullNever reports whether `run --pull never` is supported. Apple's
@@ -148,13 +174,17 @@ func DetectRuntime(prefer string) (Runtime, bool) {
 func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 	switch prefer {
 	case "", "docker":
-		// {{.ServerVersion}} exists in docker's info schema; nil err +
-		// non-empty output == reachable.
-		out, err := probe("docker", "info", "--format", "{{.ServerVersion}}")
+		// Both fields exist in docker's info schema. OperatingSystem identifies
+		// Docker Desktop even when its client runs on Linux.
+		out, err := probe("docker", "info", "--format", "{{.ServerVersion}}|{{.OperatingSystem}}")
 		if err != nil || len(bytes.TrimSpace(out)) == 0 {
 			return Runtime{}, false
 		}
-		return Runtime{Bin: "docker", Version: string(bytes.TrimSpace(out))}, true
+		version, desktop, ok := parseDockerInfo(out)
+		if !ok {
+			return Runtime{}, false
+		}
+		return Runtime{Bin: "docker", DockerDesktop: desktop, Version: version}, true
 	case runtimePodman:
 		// podman's info has no .ServerVersion (a docker-only field that would
 		// error the Go template); .Version.Version is the engine version and
@@ -182,6 +212,15 @@ func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 	default:
 		return Runtime{}, false
 	}
+}
+
+func parseDockerInfo(out []byte) (version string, desktop, ok bool) {
+	version, operatingSystem, found := strings.Cut(strings.TrimSpace(string(out)), "|")
+	version = strings.TrimSpace(version)
+	if !found || version == "" {
+		return "", false, false
+	}
+	return version, strings.Contains(strings.ToLower(operatingSystem), "docker desktop"), true
 }
 
 // parsePodmanInfo splits the "<version>|<rootless>" line emitted by the podman

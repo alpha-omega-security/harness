@@ -15,6 +15,7 @@ const (
 	KindError     = "error"
 	KindSession   = "session"
 	KindRateLimit = "rate_limit"
+	KindEgress    = "egress"
 
 	lineLimit = 300
 )
@@ -127,6 +128,8 @@ func FormatEvent(e Event) string {
 			line += " resets " + reset.Format("2006-01-02 15:04 UTC")
 		}
 		return line
+	case KindEgress:
+		return "[egress] " + e.Text
 	case KindError:
 		return "[error] " + e.Text
 	default:

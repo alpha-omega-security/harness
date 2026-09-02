@@ -199,6 +199,20 @@ func TestRunnerArgs_EnvPreservesBareKeys(t *testing.T) {
 	}
 }
 
+func TestRunnerArgs_OmitAndReplaceBackendEnv(t *testing.T) {
+	runner := Runner{
+		OmitEnv: []string{"STUB_TELEMETRY"},
+		Env:     []string{"PROVIDER_TOKEN"},
+	}
+	got := runner.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
+	if hasAdjacent(got, "-e", "STUB_TELEMETRY=off") {
+		t.Errorf("omitted backend env remains in args: %v", got)
+	}
+	if !hasAdjacent(got, "-e", "PROVIDER_TOKEN") {
+		t.Errorf("scoped replacement env missing from args: %v", got)
+	}
+}
+
 func TestRunnerArgs_Network(t *testing.T) {
 	// No proxy, no network -> --network none (fail closed).
 	closed := Runner{}.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
@@ -208,12 +222,15 @@ func TestRunnerArgs_Network(t *testing.T) {
 	// Proxy set -> proxy env, default bridge (no --network).
 	proxied := Runner{ProxyURL: "http://p:8080"}.args(stubHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
 	for _, key := range []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"} {
-		if !hasAdjacent(proxied, "-e", key+"=http://p:8080") {
+		if !hasAdjacent(proxied, "-e", key) {
 			t.Errorf("proxy: expected -e %s: %v", key, proxied)
 		}
 	}
-	if !hasAdjacent(proxied, "-e", "NO_PROXY=") {
-		t.Errorf("proxy: expected -e NO_PROXY=: %v", proxied)
+	if !hasAdjacent(proxied, "-e", "NO_PROXY") {
+		t.Errorf("proxy: expected -e NO_PROXY: %v", proxied)
+	}
+	if strings.Contains(strings.Join(proxied, " "), "http://p:8080") {
+		t.Errorf("proxy URL exposed in runtime args: %v", proxied)
 	}
 	if hasAdjacent(proxied, "--network", "none") {
 		t.Errorf("proxy: must not set --network none: %v", proxied)
@@ -224,7 +241,7 @@ func TestRunnerArgs_Network(t *testing.T) {
 	if !hasAdjacent(both, "--network", "hardened-1") {
 		t.Errorf("network: expected --network hardened-1: %v", both)
 	}
-	if !hasAdjacent(both, "-e", "HTTPS_PROXY=http://p:8080") {
+	if !hasAdjacent(both, "-e", "HTTPS_PROXY") {
 		t.Errorf("network+proxy: expected proxy env: %v", both)
 	}
 	// Named network without a proxy -> --network <name> only (caller owns
@@ -233,7 +250,7 @@ func TestRunnerArgs_Network(t *testing.T) {
 	if !hasAdjacent(netOnly, "--network", "hardened-1") || hasAdjacent(netOnly, "--network", "none") {
 		t.Errorf("network only: expected --network hardened-1 and no none: %v", netOnly)
 	}
-	if hasAdjacent(netOnly, "-e", "HTTPS_PROXY=") {
+	if hasAdjacent(netOnly, "-e", "HTTPS_PROXY") {
 		t.Errorf("network only: must not set empty proxy env: %v", netOnly)
 	}
 }
