@@ -151,14 +151,14 @@ func parseCodexLine(raw []byte, emit func(Event)) {
 		// Codex emits todo-list snapshots on item.updated and item.completed.
 		// They are internal progress state rather than agent output, and each
 		// update repeats the full list, so do not surface them as text.
-	case event.Item != nil && event.Item.Type == "error":
+	case event.Item != nil && event.Item.Type == wireTypeError:
 		emit(Event{Kind: KindError, Text: event.Item.Message})
 	case event.Item != nil && event.Item.Text != "":
 		emit(Event{Kind: KindText, Text: event.Item.Text})
 	case event.Item != nil && isCodexToolItem(event.Item.Type):
 		name := codexToolName(event.Item)
 		emit(Event{Kind: KindTool, Tool: name, Text: codexToolText(event.Item)})
-	case event.Type == "tool" || event.Tool != "":
+	case event.Type == wireTypeTool || event.Tool != "":
 		name := event.Tool
 		if name == "" {
 			name = event.Name
@@ -185,7 +185,7 @@ func isCodexSessionEvent(event codexLine) bool {
 }
 
 func isCodexToolItem(itemType string) bool {
-	return strings.Contains(itemType, "command") || strings.Contains(itemType, "tool") ||
+	return strings.Contains(itemType, "command") || strings.Contains(itemType, wireTypeTool) ||
 		itemType == "web_search" || itemType == "file_change"
 }
 
@@ -251,10 +251,10 @@ func (CodexHarness) DefaultModels() []ModelDefault {
 	// IDs mirror Codex's built-in model catalog. The Codex-tuned model comes
 	// first because that is the CLI's default when --model is absent.
 	return []ModelDefault{
-		{Name: "GPT-5.3 Codex", ID: "gpt-5.3-codex", Tier: "high"},
-		{Name: "GPT-5.4 mini", ID: "gpt-5.4-mini", Tier: "mid"},
-		{Name: "GPT-5.4", ID: "gpt-5.4"},
-		{Name: "GPT-5.5", ID: "gpt-5.5", Tier: "max"},
+		{Name: "GPT-5.3 Codex", ID: modelGPT53CodexID, Tier: modelTierHigh},
+		{Name: "GPT-5.4 mini", ID: modelGPT54MiniID, Tier: modelTierMid},
+		{Name: "GPT-5.4", ID: modelGPT54ID},
+		{Name: "GPT-5.5", ID: modelGPT55ID, Tier: modelTierMax},
 		{Name: "GPT-5.2", ID: "gpt-5.2"},
 	}
 }
@@ -262,9 +262,9 @@ func (CodexHarness) DefaultModels() []ModelDefault {
 // codexAccountPhrases are provider account failures that an immediate retry
 // cannot fix.
 var codexAccountPhrases = []string{
-	"rate_limit",
-	"rate limit",
-	"too many requests",
+	accountCodeRateLimit,
+	accountPhraseRateLimit,
+	accountPhraseTooManyRequests,
 	"429",
 	"insufficient_quota",
 	"quota exceeded",

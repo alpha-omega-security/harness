@@ -131,7 +131,7 @@ func hardenedKey() (string, error) {
 }
 
 func ensureHardenedNetwork(ctx context.Context, rt Runtime, name string) error {
-	if out, err := exec.CommandContext(ctx, rt.bin(), "network", "inspect", "--", name).Output(); err == nil && len(out) > 0 {
+	if out, err := exec.CommandContext(ctx, rt.bin(), runtimeCommandNetwork, "inspect", "--", name).Output(); err == nil && len(out) > 0 {
 		return nil
 	}
 	args := hardenedNetworkCreateArgs(rt, name)
@@ -142,7 +142,7 @@ func ensureHardenedNetwork(ctx context.Context, rt Runtime, name string) error {
 }
 
 func hardenedNetworkCreateArgs(rt Runtime, name string) []string {
-	args := []string{"network", "create", "--internal"}
+	args := []string{runtimeCommandNetwork, "create", "--internal"}
 	if rt.needsInternalDNSDisabled() {
 		// Keep the internal resolver from shadowing DNS on the sidecar's
 		// default-network egress leg.
@@ -221,7 +221,7 @@ func (r Runner) startProxySidecar(ctx context.Context, cfg SidecarConfig, name, 
 		return "", fmt.Errorf("%s run proxy sidecar: %w: %s", r.Runtime.bin(), err, strings.TrimSpace(string(out)))
 	}
 	egressNetwork := r.Runtime.sidecarEgressNetwork()
-	if out, err := exec.CommandContext(ctx, r.Runtime.bin(), "network", "connect", "--", egressNetwork, name).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, r.Runtime.bin(), runtimeCommandNetwork, "connect", "--", egressNetwork, name).CombinedOutput(); err != nil {
 		removeContainer(r.Runtime, name)
 		return "", fmt.Errorf("%s network connect %s: %w: %s", r.Runtime.bin(), egressNetwork, err, strings.TrimSpace(string(out)))
 	}
@@ -242,7 +242,7 @@ func (r Runner) startProxySidecar(ctx context.Context, cfg SidecarConfig, name, 
 
 func sidecarRunArgs(cfg SidecarConfig, name, network string, ownerPID int) []string {
 	args := []string{
-		"run", "-d",
+		runtimeCommandRun, "-d",
 		"--name", name,
 		"--network", network,
 		"--label", proxyOwnerPIDLabel + "=" + strconv.Itoa(ownerPID),
@@ -364,7 +364,7 @@ func (rt Runtime) hardenedProxyReachArgs(network, gateway, port, image string) [
 func sidecarReachArgs(network, endpoint, image string) []string {
 	target := "http://" + endpoint + "/"
 	script := "curl -s -m 5 -o /dev/null " + target + " && echo REACHED || echo UNREACHABLE"
-	return []string{"run", "--rm", "--cap-drop", "ALL", "--network", network,
+	return []string{runtimeCommandRun, "--rm", "--cap-drop", "ALL", "--network", network,
 		"--entrypoint", "sh", "--", image, "-c", script}
 }
 
@@ -411,7 +411,7 @@ func (hn hardenedRun) cleanup(rt Runtime, emit func(harness.Event)) {
 		removeContainer(rt, hn.proxyName)
 	}
 	if hn.network != "" {
-		_ = exec.Command(rt.bin(), "network", "rm", "--", hn.network).Run()
+		_ = exec.Command(rt.bin(), runtimeCommandNetwork, "rm", "--", hn.network).Run()
 	}
 }
 
@@ -498,7 +498,7 @@ func VerifyProxyBinary(ctx context.Context, rt Runtime, image string) error {
 	if !rt.NeedsEgressSidecar() || image == "" || !imageExistsLocally(ctx, rt, image) {
 		return nil
 	}
-	out, err := exec.CommandContext(ctx, rt.bin(), "run", "--rm", "--pull", "never",
+	out, err := exec.CommandContext(ctx, rt.bin(), runtimeCommandRun, "--rm", "--pull", "never",
 		"--", image, "harness-proxy", "-h").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("runner image %q is missing harness-proxy: %w: %s", image, err, strings.TrimSpace(string(out)))
@@ -555,9 +555,9 @@ func sidecarOwnerPID(ctx context.Context, rt Runtime, name string) (int, bool) {
 }
 
 func sweepNetworks(ctx context.Context, rt Runtime) (int, error) {
-	args := []string{"network", "ls", "--filter", "name=" + hardenedNetworkPrefix, "--format", "{{.Name}}"}
+	args := []string{runtimeCommandNetwork, "ls", "--filter", "name=" + hardenedNetworkPrefix, "--format", "{{.Name}}"}
 	if rt.Bin == runtimeApple {
-		args = []string{"network", "list", "--quiet"}
+		args = []string{runtimeCommandNetwork, "list", "--quiet"}
 	}
 	out, err := exec.CommandContext(ctx, rt.bin(), args...).Output()
 	if err != nil {
@@ -569,7 +569,7 @@ func sweepNetworks(ctx context.Context, rt Runtime) (int, error) {
 		if !ok || processRunning(ownerPID) {
 			continue
 		}
-		if exec.CommandContext(ctx, rt.bin(), "network", "rm", "--", name).Run() == nil {
+		if exec.CommandContext(ctx, rt.bin(), runtimeCommandNetwork, "rm", "--", name).Run() == nil {
 			removed++
 		}
 	}

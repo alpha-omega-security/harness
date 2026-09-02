@@ -9,7 +9,20 @@ import (
 	"strings"
 )
 
-const DefaultMaxTurns = 30
+const (
+	DefaultMaxTurns = 30
+
+	modelClaudeOpus5ID   = "claude-opus-5"
+	modelClaudeSonnet5ID = "claude-sonnet-5"
+	modelGPT53CodexID    = "gpt-5.3-codex"
+	modelGPT54MiniID     = "gpt-5.4-mini"
+	modelGPT54ID         = "gpt-5.4"
+	modelGPT55ID         = "gpt-5.5"
+
+	modelTierMid  = "mid"
+	modelTierHigh = "high"
+	modelTierMax  = "max"
+)
 
 // Job contains the resolved inputs for one CLI invocation.
 type Job struct {
@@ -124,8 +137,6 @@ var harnesses = map[string]Harness{
 }
 
 // ByName resolves a backend name. The empty name selects Claude.
-//
-//nolint:ireturn // callers need the common interface selected by the registry
 func ByName(name string) (Harness, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if h, ok := harnesses[name]; ok {

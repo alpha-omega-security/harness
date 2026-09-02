@@ -15,13 +15,15 @@ import (
 	"strings"
 )
 
-// runtimeApple is the Runtime.Bin value for Apple's container runtime. Hoisted
-// to a constant because the identifier is checked throughout the package.
-const runtimeApple = "apple"
+const (
+	// Runtime.Bin values checked throughout the package.
+	runtimeApple  = "apple"
+	runtimeDocker = "docker"
+	runtimePodman = "podman"
 
-// runtimePodman is the Runtime.Bin value for podman (rootful or rootless).
-// Hoisted to a constant for the same reason as runtimeApple.
-const runtimePodman = "podman"
+	runtimeCommandNetwork = "network"
+	runtimeCommandRun     = "run"
+)
 
 // Runtime identifies the OCI engine the runner shells out to and the main
 // trait that changes the generated `run` flags: rootless podman maps
@@ -47,7 +49,7 @@ type Runtime struct {
 func (rt Runtime) bin() string {
 	switch rt.Bin {
 	case "":
-		return "docker"
+		return runtimeDocker
 	case runtimeApple:
 		return "container"
 	default:
@@ -88,7 +90,7 @@ func (rt Runtime) NeedsEgressSidecar() bool {
 }
 
 func (rt Runtime) isDockerDesktop() bool {
-	if rt.bin() != "docker" {
+	if rt.bin() != runtimeDocker {
 		return false
 	}
 	if rt.Version != "" {
@@ -98,7 +100,7 @@ func (rt Runtime) isDockerDesktop() bool {
 }
 
 func (rt Runtime) sidecarEgressNetwork() string {
-	if rt.bin() == "docker" {
+	if rt.bin() == runtimeDocker {
 		return "bridge"
 	}
 	return "podman"
@@ -141,7 +143,7 @@ func (rt Runtime) supportsNoNewPrivileges() bool {
 // progress to stdout by default; suppress it so probe parsers and the
 // backend's stream reader only see the container payload.
 func (rt Runtime) runArgs(args ...string) []string {
-	out := []string{"run"}
+	out := []string{runtimeCommandRun}
 	if rt.Bin == runtimeApple {
 		out = append(out, "--progress", "none")
 	}
@@ -173,10 +175,10 @@ func DetectRuntime(prefer string) (Runtime, bool) {
 
 func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 	switch prefer {
-	case "", "docker":
+	case "", runtimeDocker:
 		// Both fields exist in docker's info schema. OperatingSystem identifies
 		// Docker Desktop even when its client runs on Linux.
-		out, err := probe("docker", "info", "--format", "{{.ServerVersion}}|{{.OperatingSystem}}")
+		out, err := probe(runtimeDocker, "info", "--format", "{{.ServerVersion}}|{{.OperatingSystem}}")
 		if err != nil || len(bytes.TrimSpace(out)) == 0 {
 			return Runtime{}, false
 		}
@@ -184,7 +186,7 @@ func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 		if !ok {
 			return Runtime{}, false
 		}
-		return Runtime{Bin: "docker", DockerDesktop: desktop, Version: version}, true
+		return Runtime{Bin: runtimeDocker, DockerDesktop: desktop, Version: version}, true
 	case runtimePodman:
 		// podman's info has no .ServerVersion (a docker-only field that would
 		// error the Go template); .Version.Version is the engine version and
@@ -370,7 +372,7 @@ func VerifyKeepID(ctx context.Context, rt Runtime, image string) error {
 	if image == "" || !imageExistsLocally(ctx, rt, image) {
 		return nil
 	}
-	out, err := exec.CommandContext(ctx, rt.bin(), "run", "--rm", "--pull", "never",
+	out, err := exec.CommandContext(ctx, rt.bin(), runtimeCommandRun, "--rm", "--pull", "never",
 		"--userns=keep-id", "--entrypoint", "sh", "--", image, "-c", "exit 0").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("rootless podman --userns=keep-id smoke test failed "+

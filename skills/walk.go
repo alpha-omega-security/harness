@@ -56,7 +56,7 @@ func walkDepth(root, path string) int {
 
 func shouldSkipDir(name string) bool {
 	switch name {
-	case ".git", "node_modules", ".venv", "__pycache__", "vendor":
+	case gitMetadataDir, "node_modules", ".venv", "__pycache__", "vendor":
 		return true
 	default:
 		return false

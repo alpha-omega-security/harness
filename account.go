@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+const (
+	accountPhraseRateLimit       = "rate limit"
+	accountCodeRateLimit         = "rate_limit"
+	accountPhraseTooManyRequests = "too many requests"
+)
+
 // AccountError reports a provider-level account problem for which immediately
 // retrying the command is unlikely to help.
 type AccountError struct {
@@ -24,9 +30,9 @@ var transientLimitPhrases = []string{
 	"usage limit",
 	"session limit",
 	"plan limit",
-	"rate limit",
-	"rate_limit",
-	"too many requests",
+	accountPhraseRateLimit,
+	accountCodeRateLimit,
+	accountPhraseTooManyRequests,
 	"quota exceeded",
 	"credit balance",
 	"429",

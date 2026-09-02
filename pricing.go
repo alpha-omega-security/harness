@@ -22,13 +22,13 @@ var modelPricing = map[string]modelPrice{
 	"claude-opus-4-6":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
 	"claude-opus-4-7":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
 	"claude-opus-4-8":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
-	"claude-opus-5":     {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	modelClaudeOpus5ID:  {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
 	"claude-sonnet-4-6": {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
 	// Sonnet 5 has an introductory $2/$10 rate through 2026-08-31.
-	"claude-sonnet-5":  {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
-	"claude-haiku-4-5": {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
-	"claude-fable-5":   {In: 10.00, Out: 50.00, CachedIn: 1.00, CacheWrite: 12.50},
-	"claude-fable-5-1": {In: 10.00, Out: 50.00, CachedIn: 0.25, CacheWrite: 12.50},
+	modelClaudeSonnet5ID: {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
+	"claude-haiku-4-5":   {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
+	"claude-fable-5":     {In: 10.00, Out: 50.00, CachedIn: 1.00, CacheWrite: 12.50},
+	"claude-fable-5-1":   {In: 10.00, Out: 50.00, CachedIn: 0.25, CacheWrite: 12.50},
 
 	// Copilot uses dotted Anthropic version ids.
 	"claude-opus-4.6":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
@@ -38,15 +38,15 @@ var modelPricing = map[string]modelPrice{
 	"claude-haiku-4.5":  {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
 
 	// OpenAI
-	"gpt-5.6-sol":   {In: 2.00, Out: 10.00, CachedIn: 0.20, CacheWrite: 2.50},
-	"gpt-5.6-terra": {In: 2.00, Out: 12.00, CachedIn: 0.20, CacheWrite: 2.50},
-	"gpt-5.6-luna":  {In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25},
-	"gpt-5.5":       {In: 5.00, Out: 30.00, CachedIn: 0.50},
-	"gpt-5.4":       {In: 2.50, Out: 15.00, CachedIn: 0.25},
-	"gpt-5.4-mini":  {In: 0.75, Out: 4.50, CachedIn: 0.075},
-	"gpt-5.3-codex": {In: 1.75, Out: 14.00, CachedIn: 0.175},
-	"gpt-5.2":       {In: 1.75, Out: 14.00, CachedIn: 0.175},
-	"gpt-5-mini":    {In: 0.25, Out: 2.00, CachedIn: 0.02},
+	"gpt-5.6-sol":     {In: 2.00, Out: 10.00, CachedIn: 0.20, CacheWrite: 2.50},
+	"gpt-5.6-terra":   {In: 2.00, Out: 12.00, CachedIn: 0.20, CacheWrite: 2.50},
+	"gpt-5.6-luna":    {In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25},
+	modelGPT55ID:      {In: 5.00, Out: 30.00, CachedIn: 0.50},
+	modelGPT54ID:      {In: 2.50, Out: 15.00, CachedIn: 0.25},
+	modelGPT54MiniID:  {In: 0.75, Out: 4.50, CachedIn: 0.075},
+	modelGPT53CodexID: {In: 1.75, Out: 14.00, CachedIn: 0.175},
+	"gpt-5.2":         {In: 1.75, Out: 14.00, CachedIn: 0.175},
+	"gpt-5-mini":      {In: 0.25, Out: 2.00, CachedIn: 0.02},
 
 	// Copilot-hosted Microsoft, Google, and xAI models.
 	"mai-code-1-flash-picker": {In: 0.75, Out: 4.50, CachedIn: 0.07},
