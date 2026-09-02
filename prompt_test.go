@@ -121,6 +121,9 @@ func TestWriteSystemPromptUsesBackendCapability(t *testing.T) {
 		t.Parallel()
 		workspace := t.TempDir()
 		h := promptTransportHarness{binary: "claude", guide: "CUSTOM.md"}
+		if err := os.WriteFile(filepath.Join(workspace, "CUSTOM.md"), []byte("old content that must be truncated"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
 			t.Fatal(err)
 		}
@@ -149,4 +152,178 @@ func TestWriteSystemPromptUsesBackendCapability(t *testing.T) {
 			t.Fatalf("guide stat error = %v, want not found", err)
 		}
 	})
+}
+
+func TestWriteSystemPromptPreservesGuidePermissions(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	guide := filepath.Join(workspace, "CUSTOM.md")
+	if err := os.WriteFile(guide, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := promptTransportHarness{guide: "CUSTOM.md"}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Mode().Perm() != before.Mode().Perm() {
+		t.Errorf("guide permissions = %v, want %v", after.Mode().Perm(), before.Mode().Perm())
+	}
+}
+
+func TestWriteSystemPromptCreatesMissingGuideDirectory(t *testing.T) {
+	t.Parallel()
+
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	guide := filepath.Join(".github", "copilot-instructions.md")
+	h := promptTransportHarness{guide: guide}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(workspace, guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "Use the guide.\n" {
+		t.Errorf("guide = %q", content)
+	}
+}
+
+func TestWriteSystemPromptReplacesGuideSymlinkWithinWorkspace(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	target := filepath.Join(workspace, "shared-guide.md")
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(target), filepath.Join(workspace, "CUSTOM.md")); err != nil {
+		t.Fatal(err)
+	}
+	h := promptTransportHarness{guide: "CUSTOM.md"}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old" {
+		t.Errorf("guide target = %q, want unchanged", content)
+	}
+	content, err = os.ReadFile(filepath.Join(workspace, "CUSTOM.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "Use the guide.\n" {
+		t.Errorf("guide = %q", content)
+	}
+}
+
+func TestWriteSystemPromptReplacesExternalGuideSymlink(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guide := filepath.Join(workspace, "CUSTOM.md")
+	if err := os.Symlink(victim, guide); err != nil {
+		t.Fatal(err)
+	}
+	h := promptTransportHarness{guide: "CUSTOM.md"}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "keep" {
+		t.Errorf("outside victim = %q, want unchanged", content)
+	}
+	info, err := os.Lstat(guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Errorf("guide mode = %v, want regular file", info.Mode())
+	}
+	content, err = os.ReadFile(guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "Use the guide.\n" {
+		t.Errorf("guide = %q", content)
+	}
+}
+
+func TestWriteSystemPromptRejectsExternalGuideDirectorySymlink(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "copilot-instructions.md")
+	if err := os.WriteFile(victim, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(workspace, ".github")); err != nil {
+		t.Fatal(err)
+	}
+	h := promptTransportHarness{guide: filepath.Join(".github", "copilot-instructions.md")}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err == nil {
+		t.Fatal("WriteSystemPrompt followed a guide directory symlink outside the workspace")
+	}
+	content, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "keep" {
+		t.Errorf("outside victim = %q, want unchanged", content)
+	}
+}
+
+func TestWriteSystemPromptReplacesExternalGuideHardLink(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	workspace := filepath.Join(parent, "workspace")
+	if err := os.Mkdir(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(parent, "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guide := filepath.Join(workspace, "CUSTOM.md")
+	if err := os.Link(victim, guide); err != nil {
+		t.Fatal(err)
+	}
+	h := promptTransportHarness{guide: "CUSTOM.md"}
+	if err := WriteSystemPrompt(h, Job{Workspace: workspace, SystemPrompt: "Use the guide."}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "keep" {
+		t.Errorf("outside victim = %q, want unchanged", content)
+	}
+	content, err = os.ReadFile(guide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "Use the guide.\n" {
+		t.Errorf("guide = %q", content)
+	}
 }
