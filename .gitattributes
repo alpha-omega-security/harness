@@ -1,0 +1,4 @@
+# go mod tidy -diff compares bytes, and Git for Windows checks out CRLF by
+# default, so the Windows CI leg saw a go.sum that differed only in line
+# endings. Normalize every text file to LF on checkout.
+* text=auto eol=lf
