@@ -2,21 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
 
 permissions: {}
 
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+jobs:
+  tests:
+    name: tests (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ["ubuntu-24.04", "macos-26", "windows-2025"]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -24,18 +37,58 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
 
-      - name: Build
-        run: go build -v ./...
+      # Restore exact-key module caches on every run, but save only on pushes to main.
+      # A pull request reuses main's cache only while go.sum is unchanged,
+      # without writing a branch-scoped entry that no other ref can restore.
+      # The build cache is intentionally excluded because go mod verify does not
+      # authenticate compiled package archives.
+      - name: Restore Go module cache
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-mod-${{ github.job }}-${{ hashFiles('go.sum') }}
+
+      - name: Verify restored Go module cache
+        run: go mod verify
+
+      - name: Verify Go modules are tidy
+        run: go mod tidy -diff
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Vet integration tests
+        run: go vet -tags integration ./...
 
       - name: Test
-        run: go test -v -race ./...
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Save Go module cache
+        if: github.event_name == 'push' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   lint:
-    runs-on: ubuntu-latest
-
+    name: lint (${{ matrix.goos }})
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: ["linux", "windows"]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -43,8 +96,113 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+      - name: Restore Go module cache
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          version: latest
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-mod-${{ github.job }}-${{ hashFiles('go.sum') }}
+
+      - name: Verify restored Go module cache
+        run: go mod verify
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOOS: ${{ matrix.goos }}
+        with:
+          version: v2.13.1
+          # The action's cache key does not include GOOS, so sharing it would
+          # mix analysis facts from the Linux and Windows source sets.
+          skip-cache: ${{ matrix.goos == 'windows' }}
+          skip-save-cache: ${{ github.event_name != 'push' }}
+
+      - name: Save Go module cache
+        if: github.event_name == 'push' && matrix.goos == 'linux' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+  vuln:
+    name: vuln
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore Go module cache
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-mod-${{ github.job }}-${{ hashFiles('go.sum') }}
+
+      - name: Verify restored Go module cache
+        run: go mod verify
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+      - name: Scan for known vulnerabilities
+        run: govulncheck ./...
+
+      - name: Save Go module cache
+        if: github.event_name == 'push' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Git repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        run: pipx install zizmor==1.29.0
+
+      - name: Audit GitHub Actions
+        run: zizmor --persona auditor .github/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  conclusion:
+    name: conclusion
+    needs: [tests, lint, vuln, zizmor]
+    if: always()
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Result
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          VULN_RESULT: ${{ needs.vuln.result }}
+          ZIZMOR_RESULT: ${{ needs.zizmor.result }}
+        run: |
+          [[ "${TESTS_RESULT}" == success ]]
+          [[ "${LINT_RESULT}" == success ]]
+          [[ "${VULN_RESULT}" == success ]]
+          [[ "${ZIZMOR_RESULT}" == success ]]
