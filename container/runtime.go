@@ -33,8 +33,9 @@ const runtimePodman = "podman"
 // The zero value is the docker runtime, so a bare Runner{} keeps shelling out
 // to "docker".
 type Runtime struct {
-	Bin      string // "docker", "podman", or "apple"; "" means docker
-	Rootless bool   // true only for rootless podman
+	Bin           string // "docker", "podman", or "apple"; "" means docker
+	Rootless      bool   // true only for rootless podman
+	DockerDesktop bool   // true when the detected docker daemon is Docker Desktop
 	// Version is the engine version captured at detection (e.g. "4.9.4").
 	// Best-effort and only used for the startup host-gateway check; "" when
 	// unknown.
@@ -83,7 +84,17 @@ func (rt Runtime) NeedsHardenedNetVerify() bool {
 // Docker Desktop cannot reach a host proxy across the --internal boundary.
 // Apple keeps the host proxy, reached through the per-run gateway.
 func (rt Runtime) NeedsEgressSidecar() bool {
-	return (rt.Bin == runtimePodman && rt.Rootless) || (rt.bin() == "docker" && runtime.GOOS != "linux")
+	return (rt.Bin == runtimePodman && rt.Rootless) || rt.isDockerDesktop()
+}
+
+func (rt Runtime) isDockerDesktop() bool {
+	if rt.bin() != "docker" {
+		return false
+	}
+	if rt.Version != "" {
+		return rt.DockerDesktop
+	}
+	return rt.DockerDesktop || runtime.GOOS != "linux"
 }
 
 func (rt Runtime) sidecarEgressNetwork() string {
@@ -106,7 +117,7 @@ func (rt Runtime) supportsHostGatewayAddHost() bool {
 }
 
 func (rt Runtime) hostGatewayProbeNetwork(network string) string {
-	if rt.bin() == "docker" && runtime.GOOS != "linux" {
+	if rt.isDockerDesktop() {
 		return ""
 	}
 	return network
@@ -163,13 +174,17 @@ func DetectRuntime(prefer string) (Runtime, bool) {
 func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 	switch prefer {
 	case "", "docker":
-		// {{.ServerVersion}} exists in docker's info schema; nil err +
-		// non-empty output == reachable.
-		out, err := probe("docker", "info", "--format", "{{.ServerVersion}}")
+		// Both fields exist in docker's info schema. OperatingSystem identifies
+		// Docker Desktop even when its client runs on Linux.
+		out, err := probe("docker", "info", "--format", "{{.ServerVersion}}|{{.OperatingSystem}}")
 		if err != nil || len(bytes.TrimSpace(out)) == 0 {
 			return Runtime{}, false
 		}
-		return Runtime{Bin: "docker", Version: string(bytes.TrimSpace(out))}, true
+		version, desktop, ok := parseDockerInfo(out)
+		if !ok {
+			return Runtime{}, false
+		}
+		return Runtime{Bin: "docker", DockerDesktop: desktop, Version: version}, true
 	case runtimePodman:
 		// podman's info has no .ServerVersion (a docker-only field that would
 		// error the Go template); .Version.Version is the engine version and
@@ -197,6 +212,15 @@ func detectRuntime(prefer string, probe runtimeProber) (Runtime, bool) {
 	default:
 		return Runtime{}, false
 	}
+}
+
+func parseDockerInfo(out []byte) (version string, desktop, ok bool) {
+	version, operatingSystem, found := strings.Cut(strings.TrimSpace(string(out)), "|")
+	version = strings.TrimSpace(version)
+	if !found || version == "" {
+		return "", false, false
+	}
+	return version, strings.Contains(strings.ToLower(operatingSystem), "docker desktop"), true
 }
 
 // parsePodmanInfo splits the "<version>|<rootless>" line emitted by the podman

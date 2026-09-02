@@ -125,8 +125,13 @@ func TestRunnerRunHardenedValidation(t *testing.T) {
 	if err := (Runner{Runtime: runtime, Hardened: true}).Run(t.Context(), stubHarness{}, job, nil); err == nil || !strings.Contains(err.Error(), "ProxyURL is required") {
 		t.Errorf("missing ProxyURL error = %v", err)
 	}
-	if err := (Runner{Runtime: runtime, Hardened: true, ProxyURL: "http://proxy"}).Run(t.Context(), stubHarness{}, job, nil); err == nil || !strings.Contains(err.Error(), "invalid ProxyURL") {
+	const proxyToken = "secret-proxy-token"
+	err := (Runner{Runtime: runtime, Hardened: true, ProxyURL: "http://harness:" + proxyToken + "@proxy"}).Run(t.Context(), stubHarness{}, job, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid ProxyURL") {
 		t.Errorf("invalid ProxyURL error = %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), proxyToken) {
+		t.Errorf("invalid ProxyURL error exposed proxy token: %v", err)
 	}
 }
 

@@ -371,12 +371,12 @@ func sidecarReachArgs(network, endpoint, image string) []string {
 func proxyPortFromURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", err
+		return "", errors.New("invalid proxy URL")
 	}
 	port := u.Port()
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
-		return "", fmt.Errorf("invalid port in proxy url %q", raw)
+		return "", errors.New("proxy URL must include a port between 1 and 65535")
 	}
 	return port, nil
 }

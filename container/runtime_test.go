@@ -50,16 +50,17 @@ func TestRuntimeNeedsKeepID(t *testing.T) {
 }
 
 func TestRuntimeNeedsHardenedNetVerify(t *testing.T) {
-	wantDocker := runtime.GOOS != "linux"
+	wantUnknownDocker := runtime.GOOS != "linux"
 	tests := []struct {
 		rt   Runtime
 		want bool
 	}{
-		{Runtime{}, wantDocker},                        // docker (zero value)
-		{Runtime{Bin: "docker"}, wantDocker},           // docker explicit
-		{Runtime{Bin: "podman"}, false},                // rootful podman -> trusted like docker
-		{Runtime{Bin: "podman", Rootless: true}, true}, // rootless podman -> verified
-		{Runtime{Bin: "apple"}, true},                  // apple --internal -> proven per run
+		{Runtime{}, wantUnknownDocker},                                         // docker (zero value)
+		{Runtime{Bin: "docker", Version: "24.0.7"}, false},                     // docker engine
+		{Runtime{Bin: "docker", Version: "24.0.7", DockerDesktop: true}, true}, // Docker Desktop
+		{Runtime{Bin: "podman"}, false},                                        // rootful podman -> trusted like docker
+		{Runtime{Bin: "podman", Rootless: true}, true},                         // rootless podman -> verified
+		{Runtime{Bin: "apple"}, true},                                          // apple --internal -> proven per run
 	}
 	for _, tc := range tests {
 		if got := tc.rt.NeedsHardenedNetVerify(); got != tc.want {
@@ -69,15 +70,12 @@ func TestRuntimeNeedsHardenedNetVerify(t *testing.T) {
 }
 
 func TestRuntimeHostGatewayProbeNetwork(t *testing.T) {
-	wantDocker := "hardened"
-	if runtime.GOOS != "linux" {
-		wantDocker = ""
-	}
 	for _, tc := range []struct {
 		rt   Runtime
 		want string
 	}{
-		{Runtime{Bin: "docker"}, wantDocker},
+		{Runtime{Bin: "docker", Version: "24.0.7"}, "hardened"},
+		{Runtime{Bin: "docker", Version: "24.0.7", DockerDesktop: true}, ""},
 		{Runtime{Bin: "podman"}, "hardened"},
 		{Runtime{Bin: "apple"}, "hardened"},
 	} {
@@ -88,16 +86,17 @@ func TestRuntimeHostGatewayProbeNetwork(t *testing.T) {
 }
 
 func TestRuntimeNeedsEgressSidecar(t *testing.T) {
-	wantDocker := runtime.GOOS != "linux"
+	wantUnknownDocker := runtime.GOOS != "linux"
 	tests := []struct {
 		rt   Runtime
 		want bool
 	}{
-		{Runtime{}, wantDocker},                        // docker (zero value)
-		{Runtime{Bin: "docker"}, wantDocker},           // docker explicit
-		{Runtime{Bin: "podman"}, false},                // rootful podman -> host proxy
-		{Runtime{Bin: "podman", Rootless: true}, true}, // rootless podman -> sidecar
-		{Runtime{Bin: "apple"}, false},                 // apple -> host proxy, NOT a sidecar
+		{Runtime{}, wantUnknownDocker},                                         // docker (zero value)
+		{Runtime{Bin: "docker", Version: "24.0.7"}, false},                     // docker engine
+		{Runtime{Bin: "docker", Version: "24.0.7", DockerDesktop: true}, true}, // Docker Desktop
+		{Runtime{Bin: "podman"}, false},                                        // rootful podman -> host proxy
+		{Runtime{Bin: "podman", Rootless: true}, true},                         // rootless podman -> sidecar
+		{Runtime{Bin: "apple"}, false},                                         // apple -> host proxy, NOT a sidecar
 	}
 	for _, tc := range tests {
 		if got := tc.rt.NeedsEgressSidecar(); got != tc.want {
@@ -163,8 +162,9 @@ func TestDetectRuntime(t *testing.T) {
 		want     Runtime
 		wantOK   bool
 	}{
-		{"docker ok", "docker", []byte("24.0.7\n"), nil, Runtime{Bin: "docker", Version: "24.0.7"}, true},
-		{"empty defaults to docker", "", []byte("24.0.7\n"), nil, Runtime{Bin: "docker", Version: "24.0.7"}, true},
+		{"docker engine", "docker", []byte("24.0.7|Ubuntu 24.04 LTS\n"), nil, Runtime{Bin: "docker", Version: "24.0.7"}, true},
+		{"docker desktop", "docker", []byte("24.0.7|Docker Desktop\n"), nil, Runtime{Bin: "docker", DockerDesktop: true, Version: "24.0.7"}, true},
+		{"empty defaults to docker", "", []byte("24.0.7|Ubuntu 24.04 LTS\n"), nil, Runtime{Bin: "docker", Version: "24.0.7"}, true},
 		{"podman rootless", "podman", []byte("4.9.4|true\n"), nil, Runtime{Bin: "podman", Rootless: true, Version: "4.9.4"}, true},
 		{"podman rootful", "podman", []byte("4.9.4|false\n"), nil, Runtime{Bin: "podman", Rootless: false, Version: "4.9.4"}, true},
 		{"apple", "apple", []byte("FIELD VALUE\nstatus running\napiserver.version container-apiserver version 1.0.0 (build: release)\n"), nil, Runtime{Bin: "apple", Version: "1.0.0"}, true},
@@ -174,6 +174,7 @@ func TestDetectRuntime(t *testing.T) {
 		{"docker unreachable", "docker", nil, probeErr, Runtime{}, false},
 		{"apple unreachable", "apple", nil, probeErr, Runtime{}, false},
 		{"podman malformed", "podman", []byte("nopipe\n"), nil, Runtime{}, false},
+		{"docker malformed", "docker", []byte("24.0.7\n"), nil, Runtime{}, false},
 		{"docker empty output", "docker", []byte("  \n"), nil, Runtime{}, false},
 	}
 	for _, tc := range tests {
@@ -215,6 +216,27 @@ func TestDetectRuntime(t *testing.T) {
 			t.Error("bogus runtime should not shell out")
 		}
 	})
+}
+
+func TestParseDockerInfo(t *testing.T) {
+	tests := []struct {
+		in          string
+		wantVersion string
+		wantDesktop bool
+		wantOK      bool
+	}{
+		{"24.0.7|Ubuntu 24.04 LTS\n", "24.0.7", false, true},
+		{"29.7.2|Docker Desktop", "29.7.2", true, true},
+		{"29.7.2|docker desktop for linux", "29.7.2", true, true},
+		{"29.7.2", "", false, false},
+		{"|Docker Desktop", "", false, false},
+	}
+	for _, tc := range tests {
+		version, desktop, ok := parseDockerInfo([]byte(tc.in))
+		if version != tc.wantVersion || desktop != tc.wantDesktop || ok != tc.wantOK {
+			t.Errorf("parseDockerInfo(%q) = %q,%v,%v; want %q,%v,%v", tc.in, version, desktop, ok, tc.wantVersion, tc.wantDesktop, tc.wantOK)
+		}
+	}
 }
 
 func TestParsePodmanInfo(t *testing.T) {
