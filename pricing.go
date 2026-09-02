@@ -28,6 +28,7 @@ var modelPricing = map[string]modelPrice{
 	"claude-sonnet-5":  {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
 	"claude-haiku-4-5": {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
 	"claude-fable-5":   {In: 10.00, Out: 50.00, CachedIn: 1.00, CacheWrite: 12.50},
+	"claude-fable-5-1": {In: 10.00, Out: 50.00, CachedIn: 0.25, CacheWrite: 12.50},
 
 	// Copilot uses dotted Anthropic version ids.
 	"claude-opus-4.6":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},

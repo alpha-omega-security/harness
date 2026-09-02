@@ -81,4 +81,10 @@ func TestCostFromUsage(t *testing.T) {
 	if got := CostFromUsage("unknown", usage); got != 0 {
 		t.Errorf("unknown model cost = %v", got)
 	}
+	if got, want := CostFromUsage("claude-fable-5-1[1m]", usage), 58.3; got != want {
+		t.Errorf("CostFromUsage(fable 5.1) = %v, want %v", got, want)
+	}
+	if got, want := CostFromUsage("claude-fable-5[1m]", usage), 58.45; got != want {
+		t.Errorf("CostFromUsage(fable 5) = %v, want %v", got, want)
+	}
 }

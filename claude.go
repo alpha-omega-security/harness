@@ -135,6 +135,7 @@ func (ClaudeHarness) DefaultModels() []ModelDefault {
 		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6", Tier: "mid"},
 		{Name: "Sonnet 5.0", ID: "claude-sonnet-5"},
 		{Name: "Fable 5", ID: "claude-fable-5[1m]"},
+		{Name: "Fable 5.1", ID: "claude-fable-5-1[1m]"},
 	}
 }
 
