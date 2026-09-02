@@ -138,7 +138,7 @@ func copySiblings(source, destination string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.Name() == skillFilename || entry.Name() == ".git" {
+		if entry.Name() == skillFilename || entry.Name() == gitMetadataDir {
 			continue
 		}
 		if err := copyTree(

@@ -128,12 +128,12 @@ func (ClaudeHarness) DefaultModels() []ModelDefault {
 	// Explicit tier tags avoid forcing callers to infer defaults from display
 	// names. The first model remains the backend default.
 	return []ModelDefault{
-		{Name: "Opus 4.6", ID: "claude-opus-4-6", Tier: "high"},
+		{Name: "Opus 4.6", ID: "claude-opus-4-6", Tier: modelTierHigh},
 		{Name: "Opus 4.7", ID: "claude-opus-4-7"},
 		{Name: "Opus 4.8", ID: "claude-opus-4-8"},
-		{Name: "Opus 5.0", ID: "claude-opus-5", Tier: "max"},
-		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6", Tier: "mid"},
-		{Name: "Sonnet 5.0", ID: "claude-sonnet-5"},
+		{Name: "Opus 5.0", ID: modelClaudeOpus5ID, Tier: modelTierMax},
+		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6", Tier: modelTierMid},
+		{Name: "Sonnet 5.0", ID: modelClaudeSonnet5ID},
 		{Name: "Fable 5", ID: "claude-fable-5[1m]"},
 		{Name: "Fable 5.1", ID: "claude-fable-5-1[1m]"},
 	}
@@ -191,7 +191,7 @@ func parseClaudeLine(raw []byte, emit func(Event)) {
 		if message.Subtype == "error_max_turns" {
 			emit(Event{Kind: KindError, Text: "hit max turns"})
 		}
-	case "error":
+	case wireTypeError:
 		var text string
 		if json.Unmarshal(message.Error, &text) != nil {
 			text = string(message.Error)
@@ -219,7 +219,7 @@ func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
 			if block.Thinking != "" {
 				emit(Event{Kind: KindThinking, Text: block.Thinking})
 			}
-		case "text":
+		case wireTypeText:
 			if block.Text != "" {
 				emit(Event{Kind: KindText, Text: block.Text})
 			}

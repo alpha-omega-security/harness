@@ -214,7 +214,7 @@ func (state *copilotStreamState) parseLine(raw []byte, emit func(Event)) {
 		}
 	case "model.call_failure":
 		emitCopilotModelCallFailure(event.Data, emit)
-	case "session.error", "error":
+	case "session.error", wireTypeError:
 		emitCopilotError(event.Data, line, emit)
 	case "abort":
 		emitCopilotAbort(event.Data, line, emit)
@@ -559,19 +559,19 @@ func (CopilotHarness) DefaultModels() []ModelDefault {
 	// hyphenated IDs.
 	return []ModelDefault{
 		{Name: "GPT-5.6 Sol", ID: "gpt-5.6-sol"},
-		{Name: "Claude Sonnet 5", ID: "claude-sonnet-5"},
-		{Name: "Claude Opus 5", ID: "claude-opus-5", Tier: "max"},
+		{Name: "Claude Sonnet 5", ID: modelClaudeSonnet5ID},
+		{Name: "Claude Opus 5", ID: modelClaudeOpus5ID, Tier: modelTierMax},
 		{Name: "Claude Opus 4.8", ID: "claude-opus-4.8"},
 		{Name: "Claude Opus 4.7", ID: "claude-opus-4.7"},
-		{Name: "Claude Sonnet 4.6", ID: "claude-sonnet-4.6", Tier: "mid"},
-		{Name: "Claude Opus 4.6", ID: "claude-opus-4.6", Tier: "high"},
+		{Name: "Claude Sonnet 4.6", ID: "claude-sonnet-4.6", Tier: modelTierMid},
+		{Name: "Claude Opus 4.6", ID: "claude-opus-4.6", Tier: modelTierHigh},
 		{Name: "Claude Haiku 4.5", ID: "claude-haiku-4.5"},
 		{Name: "GPT-5.6 Terra", ID: "gpt-5.6-terra"},
 		{Name: "GPT-5.6 Luna", ID: "gpt-5.6-luna"},
-		{Name: "GPT-5.5", ID: "gpt-5.5"},
-		{Name: "GPT-5.4", ID: "gpt-5.4"},
-		{Name: "GPT-5.4 mini", ID: "gpt-5.4-mini"},
-		{Name: "GPT-5.3-Codex", ID: "gpt-5.3-codex"},
+		{Name: "GPT-5.5", ID: modelGPT55ID},
+		{Name: "GPT-5.4", ID: modelGPT54ID},
+		{Name: "GPT-5.4 mini", ID: modelGPT54MiniID},
+		{Name: "GPT-5.3-Codex", ID: modelGPT53CodexID},
 		{Name: "GPT-5 mini", ID: "gpt-5-mini"},
 		{Name: "MAI-Code-1-Flash", ID: "mai-code-1-flash-picker"},
 		{Name: "Gemini 3.7 Flash", ID: "gemini-3.7-flash"},
@@ -587,8 +587,8 @@ func (CopilotHarness) DefaultModels() []ModelDefault {
 // copilotAccountPhrases cover authentication, entitlement, and request-limit
 // failures where an immediate retry is unlikely to help.
 var copilotAccountPhrases = []string{
-	"rate limit",
-	"too many requests",
+	accountPhraseRateLimit,
+	accountPhraseTooManyRequests,
 	"quota",
 	"not entitled",
 	"copilot access",

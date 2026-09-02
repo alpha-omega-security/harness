@@ -6,10 +6,15 @@ import (
 	"strings"
 )
 
+const (
+	gitMetadataDir    = ".git"
+	gitMetadataPrefix = gitMetadataDir + "/"
+)
+
 // DirAllExcluded reports whether an ignore pattern excludes every file below
 // rel. A pattern ending in /** is the only form that can blanket a directory.
 func DirAllExcluded(rel string, _ []string, ignore []string) bool {
-	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+	if rel == gitMetadataDir || strings.HasPrefix(rel, gitMetadataPrefix) {
 		return false
 	}
 	return dirBlanketed(rel, ignore)
@@ -29,7 +34,7 @@ func dirBlanketed(rel string, patterns []string) bool {
 // Paths are slash-separated and relative to the caller's root. The .git
 // directory is always retained for git-aware skills.
 func PathIncluded(rel string, paths, ignore []string) bool {
-	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+	if rel == gitMetadataDir || strings.HasPrefix(rel, gitMetadataPrefix) {
 		return true
 	}
 	if len(paths) > 0 && !matchAny(paths, rel) {

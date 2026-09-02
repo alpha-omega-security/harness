@@ -95,7 +95,7 @@ func parseOpencodeLine(raw []byte, emit func(Event)) {
 			name = event.Part.Name
 		}
 		emit(Event{Kind: KindTool, Tool: name, Text: summariseInput(name, event.Part.State.Input)})
-	case event.Type == "error" || len(event.Error) > 0:
+	case event.Type == wireTypeError || len(event.Error) > 0:
 		emit(Event{Kind: KindError, Text: opencodeErrorText(event.Error, line)})
 	case isOpencodeReasoningEvent(event):
 		emit(Event{Kind: KindThinking, Text: event.Part.Text})
@@ -135,7 +135,7 @@ func isOpencodeToolEvent(event opencodeLine) bool {
 	if event.Part == nil {
 		return false
 	}
-	return event.Type == "tool" || event.Part.Type == "tool" ||
+	return event.Type == wireTypeTool || event.Part.Type == wireTypeTool ||
 		event.Part.Tool != "" || event.Part.Name != ""
 }
 
@@ -150,7 +150,7 @@ func isOpencodeTextEvent(event opencodeLine) bool {
 	if event.Part == nil || event.Part.Text == "" {
 		return false
 	}
-	return event.Type == "text" || event.Part.Type == "text"
+	return event.Type == wireTypeText || event.Part.Type == wireTypeText
 }
 
 func opencodeErrorText(raw json.RawMessage, fallback string) string {
@@ -252,9 +252,9 @@ func (OpencodeHarness) DefaultModels() []ModelDefault {
 // opencodeAccountPhrases cover the common provider failures surfaced through
 // OpenCode's nested error message.
 var opencodeAccountPhrases = []string{
-	"rate limit",
-	"rate_limit",
-	"too many requests",
+	accountPhraseRateLimit,
+	accountCodeRateLimit,
+	accountPhraseTooManyRequests,
 	"429",
 	"usage limit",
 	"quota",

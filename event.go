@@ -20,6 +20,16 @@ const (
 	lineLimit = 300
 )
 
+// Wire-protocol type values emitted by the backend CLIs. Deliberately
+// separate from the Kind* event kinds above: those are harness's own public
+// taxonomy and change independently of any CLI's JSON schema, so matching an
+// upstream payload against them would couple two unrelated vocabularies.
+const (
+	wireTypeText  = "text"
+	wireTypeTool  = "tool"
+	wireTypeError = "error"
+)
+
 // Event is one backend-neutral item from an agent's output stream. Tool,
 // CostUSD, Turns, Usage, SessionID, and RateLimit are populated only for their
 // corresponding Kind.
