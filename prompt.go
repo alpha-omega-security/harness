@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -118,16 +120,72 @@ func WriteSystemPrompt(h Harness, j Job) error {
 	if guide == "" || !filepath.IsLocal(guide) {
 		return fmt.Errorf("harness: invalid guide filename %q", guide)
 	}
-	path := filepath.Join(j.Workspace, guide)
-	if err := os.MkdirAll(filepath.Dir(path), guideDirMode); err != nil {
+	if err := os.MkdirAll(j.Workspace, guideDirMode); err != nil {
+		return fmt.Errorf("harness: create workspace: %w", err)
+	}
+	root, err := os.OpenRoot(j.Workspace)
+	if err != nil {
+		return fmt.Errorf("harness: open workspace: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.MkdirAll(filepath.Dir(guide), guideDirMode); err != nil {
 		return fmt.Errorf("harness: create guide directory: %w", err)
 	}
 	content := j.SystemPrompt
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	if err := os.WriteFile(path, []byte(content), guideFileMode); err != nil {
+	if err := writeGuideFile(root, guide, []byte(content)); err != nil {
 		return fmt.Errorf("harness: write %s: %w", guide, err)
 	}
+	return nil
+}
+
+// writeGuideFile replaces guide through a fresh directory entry so an
+// existing symlink, hard link, or special file is never opened for writing.
+func writeGuideFile(root *os.Root, guide string, content []byte) error {
+	mode := os.FileMode(guideFileMode)
+	preserveMode := false
+	if info, err := root.Lstat(guide); err == nil {
+		if info.Mode().IsRegular() {
+			mode = info.Mode().Perm()
+			preserveMode = true
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	parent := filepath.Dir(guide)
+	var id [12]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return err
+	}
+	tmp := filepath.Join(parent, ".harness-"+hex.EncodeToString(id[:])+".tmp")
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	removeTemp := true
+	defer func() {
+		_ = f.Close()
+		if removeTemp {
+			_ = root.Remove(tmp)
+		}
+	}()
+	if _, err := f.Write(content); err != nil {
+		return err
+	}
+	if preserveMode {
+		if err := f.Chmod(mode); err != nil {
+			return err
+		}
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := root.Rename(tmp, guide); err != nil {
+		return err
+	}
+	removeTemp = false
 	return nil
 }
