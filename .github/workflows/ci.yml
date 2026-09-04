@@ -113,7 +113,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
         with:
-          version: v2.13.1
+          version: v2.13.2
           # The action's cache key does not include GOOS, so sharing it would
           # mix analysis facts from the Linux and Windows source sets.
           skip-cache: ${{ matrix.goos == 'windows' }}
