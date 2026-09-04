@@ -98,7 +98,7 @@ func TestBackendPathsAndState(t *testing.T) {
 			guide:   "AGENTS.md",
 			state: []string{
 				"OPENCODE_CONFIG_DIR=/state",
-				"OPENCODE_DB=" + filepath.Join("/state", "opencode.db"),
+				"OPENCODE_DB=/state/opencode.db",
 			},
 		},
 		{

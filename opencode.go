@@ -3,6 +3,7 @@ package harness
 import (
 	"encoding/json"
 	"io"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -229,7 +230,7 @@ func (OpencodeHarness) Env(_ string) []string {
 func (OpencodeHarness) StateEnv(dir string) []string {
 	return []string{
 		"OPENCODE_CONFIG_DIR=" + dir,
-		"OPENCODE_DB=" + filepath.Join(dir, "opencode.db"),
+		"OPENCODE_DB=" + path.Join(dir, "opencode.db"),
 	}
 }
 
