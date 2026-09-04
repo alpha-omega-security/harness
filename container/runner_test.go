@@ -166,6 +166,11 @@ func TestRunnerArgs_StateDir(t *testing.T) {
 	if slices.ContainsFunc(none, func(a string) bool { return strings.HasPrefix(a, "STUB_STATE=") }) {
 		t.Errorf("no StateDir: must not set StateEnv: %v", none)
 	}
+
+	opencode := Runner{StateDir: "/data/state"}.args(harness.OpencodeHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
+	if !hasAdjacent(opencode, "-e", "OPENCODE_DB=/harness-state/opencode.db") {
+		t.Errorf("OpenCode database path must use container path separators: %v", opencode)
+	}
 }
 
 func TestRunnerArgs_ExtraMountsAndEnv(t *testing.T) {
