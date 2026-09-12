@@ -12,7 +12,7 @@ type modelPrice struct {
 // no dollar amount. Rows for backends that report cost directly remain here so
 // tests can require every default model to have a known price.
 //
-// Prices are USD rates per million tokens as of 2026-08. Copilot-only rows use
+// Prices are USD rates per million tokens. Copilot-only rows use
 // the token prices returned by CLI 1.0.80's models.list, converting one AI
 // credit to $0.01. Update this table with each backend's DefaultModels list.
 //
@@ -38,7 +38,9 @@ var modelPricing = map[string]modelPrice{
 	"claude-haiku-4.5":  {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
 
 	// OpenAI
-	"gpt-5.6-sol":     {In: 2.00, Out: 10.00, CachedIn: 0.20, CacheWrite: 2.50},
+	// Sol's promotional standard rates apply at least through 2026-11-21; recheck then.
+	// https://developers.openai.com/api/docs/pricing
+	modelGPT56SolID:   {In: 4.00, Out: 20.00, CachedIn: 0.40, CacheWrite: 5.00},
 	"gpt-5.6-terra":   {In: 2.00, Out: 12.00, CachedIn: 0.20, CacheWrite: 2.50},
 	"gpt-5.6-luna":    {In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25},
 	modelGPT55ID:      {In: 5.00, Out: 30.00, CachedIn: 0.50},
@@ -68,7 +70,13 @@ const perMillion = 1e6
 // subset. CacheWriteTokens is separate only for models with a dedicated write
 // rate; it remains ordinary input when CacheWrite is zero.
 func CostFromUsage(model string, usage Usage) float64 {
-	price, ok := modelPricing[normalizeModelID(model)]
+	model = normalizeModelID(model)
+	// Daybreak Blue currently aliases Sol and shares its pricing.
+	// https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest
+	if model == modelDaybreakBlueID {
+		model = modelGPT56SolID
+	}
+	price, ok := modelPricing[model]
 	if !ok {
 		return 0
 	}
