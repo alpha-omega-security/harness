@@ -558,7 +558,7 @@ func (CopilotHarness) DefaultModels() []ModelDefault {
 	// entry as the default. Dotted Anthropic IDs are distinct from Claude Code's
 	// hyphenated IDs.
 	return []ModelDefault{
-		{Name: "GPT-5.6 Sol", ID: "gpt-5.6-sol"},
+		{Name: "GPT-5.6 Sol", ID: modelGPT56SolID},
 		{Name: "Claude Sonnet 5", ID: modelClaudeSonnet5ID},
 		{Name: "Claude Opus 5", ID: modelClaudeOpus5ID, Tier: modelTierMax},
 		{Name: "Claude Opus 4.8", ID: "claude-opus-4.8"},
