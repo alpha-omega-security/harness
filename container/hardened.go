@@ -44,10 +44,11 @@ type SidecarConfig struct {
 	Image string // empty uses Runner.Image
 	Token string // empty generates a per-run token
 	Allow []string
-	// APIPort is the host API port allowed through HostGatewayAlias. When set,
-	// the proxy proves that API is reachable before accepting traffic.
+	// APIPort is the host API port allowed through HostGatewayAlias for
+	// inspected HTTP only. When set, the proxy proves that API is reachable
+	// before accepting traffic. CONNECT to this port is denied.
 	APIPort string
-	// HostPorts adds host services to the same gateway port gate.
+	// HostPorts adds separate host services that may also use CONNECT.
 	HostPorts []string
 	// GatewayIP is the default-network host gateway. Empty resolves it per run
 	// when APIPort or HostPorts requires host access.
@@ -258,7 +259,8 @@ func sidecarRunArgs(cfg SidecarConfig, name, network string, ownerPID int) []str
 	for _, env := range SidecarEnv(cfg, egress.ListenFirstIface+":"+proxySidecarPort)[1:] {
 		args = append(args, "-e", env)
 	}
-	return append(args, "--", cfg.Image, "harness-proxy")
+	return append(args, "--", cfg.Image, "harness-proxy",
+		"--require-capability="+egress.CapabilityDenyAPIConnect)
 }
 
 // SidecarEnv returns the environment contract shared with cmd/harness-proxy.
@@ -492,16 +494,17 @@ func routeHexIPv4(field string) string {
 	return net.IPv4(byte(n), byte(n>>8), byte(n>>16), byte(n>>24)).String() //nolint:mnd
 }
 
-// VerifyProxyBinary checks that a locally cached sidecar image contains
-// harness-proxy. Missing local images are left for the first run to pull.
+// VerifyProxyBinary checks that a locally cached sidecar image supports the
+// host API CONNECT policy. Missing images are left for the first run to pull;
+// the actual sidecar launch requires the same capability.
 func VerifyProxyBinary(ctx context.Context, rt Runtime, image string) error {
 	if !rt.NeedsEgressSidecar() || image == "" || !imageExistsLocally(ctx, rt, image) {
 		return nil
 	}
 	out, err := exec.CommandContext(ctx, rt.bin(), runtimeCommandRun, "--rm", "--pull", "never",
-		"--", image, "harness-proxy", "-h").CombinedOutput()
+		"--", image, "harness-proxy", "--require-capability="+egress.CapabilityDenyAPIConnect, "-h").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("runner image %q is missing harness-proxy: %w: %s", image, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("runner image %q does not support the required harness-proxy policy (update or rebuild it): %w: %s", image, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

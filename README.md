@@ -268,10 +268,15 @@ internal network cannot reach its host proxy. Other runtimes use
 `Runner.ProxyURL` through the network gateway. Runner images used for this
 path need curl and the `cmd/harness-proxy` binary. Call `SweepHardened` during
 startup to remove networks and sidecars left by an interrupted process.
+Sidecar images must be rebuilt when Harness changes its proxy policy; stale
+images fail closed.
 
 `egress` contains the authenticated allowlist proxy and
 `WriteSandboxSettings`, which writes Claude's `.claude/settings.json` domain
 allowlist.
+`APIPort` permits inspected HTTP only. CONNECT to it is refused even when the
+port is also listed in `HostPorts`; use `HostPorts` for separate TLS or raw
+TCP services.
 
 `llm` sends a single schema-constrained request to the Anthropic Messages API.
 It accepts a caller-owned HTTP client and permits plain HTTP only for local
