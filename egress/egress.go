@@ -27,6 +27,10 @@ import (
 // through Proxy.APIHosts.
 const HostGatewayAlias = "host.docker.internal"
 
+// CapabilityDenyAPIConnect identifies proxies that keep the host API on the
+// inspected HTTP path. Sidecar callers require it when launching runner images.
+const CapabilityDenyAPIConnect = "deny-api-connect-v1"
+
 // HardenedAllow permits only a service reached through the container host
 // gateway. Callers can append their harness's model API hosts.
 var HardenedAllow = []string{
@@ -138,7 +142,7 @@ var DefaultAllow = []string{
 type Proxy struct {
 	Allow   []string
 	Token   string
-	APIPort string // only this port is allowed for APIHosts
+	APIPort string // inspected HTTP only on APIHosts; CONNECT is denied
 	// APIHosts identify a host service from inside a container. They are
 	// restricted to APIPort (plus HostPorts) and rewritten to
 	// 127.0.0.1 when the proxy dials upstream. Empty keeps the Docker/Podman
@@ -149,7 +153,8 @@ type Proxy struct {
 	// way, so a container can reach a loopback-bound service on the host
 	// (Ollama on 11434, LM Studio on 1234) at HostGatewayAlias:<port>. Empty
 	// permits only APIPort; APIPort and HostPorts both empty denies every
-	// APIHost port.
+	// APIHost port. Separate HostPorts allow CONNECT, but cannot override
+	// APIPort's tunnel denial.
 	HostPorts []string
 	Log       *slog.Logger
 	// GatewayDialHost overrides the address the proxy dials for the host skill
@@ -212,12 +217,20 @@ func (p *Proxy) checkAuth(r *http.Request) bool {
 	return ok && subtle.ConstantTimeCompare([]byte(pass), []byte(p.Token)) == 1
 }
 
-// apiHostGate rejects a request for an API host when the port is neither
-// APIPort nor listed in HostPorts. Without the both-empty check, the
+// apiHostGate restricts API hosts to inspected HTTP on APIPort and separate
+// services in HostPorts. Without the both-empty check, the
 // zero-value Proxy grants CONNECT host.docker.internal:<any>, dialTarget
 // rewrites that to 127.0.0.1:<any>, and the api-gateway path bypasses
 // egressIPControl — giving a container full host-loopback reach.
 func (p *Proxy) apiHostGate(w http.ResponseWriter, method, host, port string) bool {
+	// A tunnel would bypass HTTP inspection at the API boundary. Compare the
+	// dialed ports so an equivalent HostPorts spelling cannot override this rule.
+	if method == http.MethodConnect && p.APIPort != "" && samePort(port, p.APIPort) {
+		p.Log.Warn("egress denied", "method", method, "host", host, "port", port,
+			"reason", "host API requires inspected HTTP")
+		http.Error(w, "CONNECT to the host API is denied; use an HTTP proxy request", http.StatusForbidden)
+		return false
+	}
 	if (p.APIPort != "" && port == p.APIPort) || slices.Contains(p.HostPorts, port) {
 		return true
 	}
@@ -469,6 +482,18 @@ func splitTarget(hostport string) (host, port string) {
 		return h, p
 	}
 	return hostport, "443"
+}
+
+func samePort(a, b string) bool {
+	if a == b {
+		return true
+	}
+	apiPort, err := net.LookupPort("tcp", b)
+	if err != nil {
+		return false
+	}
+	targetPort, err := net.LookupPort("tcp", a)
+	return err == nil && targetPort == apiPort
 }
 
 func (p *Proxy) isAPIHost(host string) bool {

@@ -42,9 +42,17 @@ func parseProxyConfig(args []string, getenv func(string) string) (proxyConfig, e
 	fset.StringVar(&listen, "listen", envOr(getenv, container.ProxyListenEnv, ":3128"), "listen address")
 	fset.StringVar(&token, "token", getenv(container.ProxyTokenEnv), "Proxy-Authorization token")
 	fset.StringVar(&apiHost, "api-host", getenv(container.ProxyAPIHostEnv), "host-gateway IPv4")
-	fset.StringVar(&apiPort, "api-port", getenv(container.ProxyAPIPortEnv), "host API port")
+	fset.StringVar(&apiPort, "api-port", getenv(container.ProxyAPIPortEnv), "host API port for inspected HTTP only (no CONNECT)")
 	fset.StringVar(&hostPorts, "host-ports", getenv(container.ProxyHostPortsEnv), "comma-separated host ports")
 	fset.StringVar(&allow, "allow", getenv(container.ProxyAllowEnv), "comma-separated host allowlist")
+	// Validate each requirement as it is parsed, before a later -h can return
+	// ErrHelp or another occurrence can overwrite an unsupported capability.
+	fset.Func("require-capability", "host-required proxy security capability", func(capability string) error {
+		if capability != egress.CapabilityDenyAPIConnect {
+			return fmt.Errorf("unsupported required capability %q", capability)
+		}
+		return nil
+	})
 	if err := fset.Parse(args); err != nil {
 		return proxyConfig{}, err
 	}

@@ -95,7 +95,7 @@ exit 0
 	for _, want := range []string{
 		"run -d --name " + strings.Replace(network, hardenedNetworkPrefix, proxySidecarPrefix, 1) + " --network " + network,
 		ProxyAllowEnv + "=" + egress.HostGatewayAlias + ",api.example.test,packages.example.test",
-		"-- img:latest harness-proxy",
+		"-- img:latest harness-proxy --require-capability=" + egress.CapabilityDenyAPIConnect,
 		"network connect -- podman",
 		"--network " + network,
 		"-e HTTPS_PROXY",
@@ -247,7 +247,7 @@ func TestSidecarRunArgs(t *testing.T) {
 	if !slices.Contains(args, "--read-only") {
 		t.Errorf("missing --read-only in %v", args)
 	}
-	if tail := args[len(args)-3:]; !slices.Equal(tail, []string{"--", "proxy:latest", "harness-proxy"}) {
+	if tail := args[len(args)-4:]; !slices.Equal(tail, []string{"--", "proxy:latest", "harness-proxy", "--require-capability=" + egress.CapabilityDenyAPIConnect}) {
 		t.Errorf("sidecar tail = %v", tail)
 	}
 	if strings.Contains(strings.Join(args, " "), ProxyTokenEnv+"=tok") {

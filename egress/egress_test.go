@@ -482,7 +482,7 @@ func TestEgressProxy_ConnectEndToEnd(t *testing.T) {
 	_, upstreamPort, _ := net.SplitHostPort(upstream.Listener.Addr().String())
 
 	token := "tok"
-	p := &Proxy{Allow: []string{HostGatewayAlias}, Token: token, APIPort: upstreamPort, Log: quietLog()}
+	p := &Proxy{Allow: []string{HostGatewayAlias}, Token: token, APIPort: "1", HostPorts: []string{upstreamPort}, Log: quietLog()}
 	proxySrv := httptest.NewServer(p)
 	defer proxySrv.Close()
 
@@ -575,13 +575,12 @@ func TestEgressProxy_DeniesGatewayOnWrongPort(t *testing.T) {
 		Log:     quietLog(),
 	}
 
-	// CONNECT to allowed port should work (as far as allowlist goes)
+	// The API port is forward-only, even though it passes the port allowlist.
 	r := httptest.NewRequest(http.MethodConnect, HostGatewayAlias+":8080", nil)
 	w := httptest.NewRecorder()
 	p.ServeHTTP(w, r)
-	// Will fail with 502 (no upstream listener) but NOT 403
-	if w.Code == http.StatusForbidden {
-		t.Fatalf("CONNECT to API port should not be forbidden: %s", w.Body)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("CONNECT to API port: got %d, want 403", w.Code)
 	}
 
 	// CONNECT to a different port should be denied

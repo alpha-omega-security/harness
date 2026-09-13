@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"slices"
 	"strings"
 	"testing"
@@ -47,6 +48,45 @@ func TestParseProxyConfigValidation(t *testing.T) {
 	}
 	if _, err := parseProxyConfig([]string{"-token", "tok", "-allow", "api.example.test", "-api-port", "8080"}, getenv); err == nil {
 		t.Fatal("api-port without api-host returned nil error")
+	}
+}
+
+func TestRequiredCapability(t *testing.T) {
+	const known = "--require-capability=" + egress.CapabilityDenyAPIConnect
+	for _, tc := range []struct {
+		name                string
+		args                []string
+		wantHelp, wantError bool
+	}{
+		{"supported", []string{known}, false, false},
+		{"supported-help", []string{known, "-h"}, true, false},
+		{"unknown", []string{"--require-capability=unknown"}, false, true},
+		{"unknown-help", []string{"--require-capability=unknown", "-h"}, false, true},
+		{"empty", []string{"--require-capability=", "-h"}, false, true},
+		{"unknown-before-known", []string{"--require-capability=unknown", known, "-h"}, false, true},
+		{"unknown-after-known", []string{known, "--require-capability=unknown", "-h"}, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			getenv := func(key string) string {
+				switch key {
+				case container.ProxyTokenEnv:
+					return "token"
+				case container.ProxyAllowEnv:
+					return egress.HostGatewayAlias
+				}
+				return ""
+			}
+			_, err := parseProxyConfig(tc.args, getenv)
+			if errors.Is(err, flag.ErrHelp) != tc.wantHelp || (err != nil && !errors.Is(err, flag.ErrHelp)) != tc.wantError {
+				t.Fatalf("parse error = %v, wantHelp=%v wantError=%v", err, tc.wantHelp, tc.wantError)
+			}
+		})
+	}
+	if err := runProxy([]string{known, "-h"}); err != nil {
+		t.Fatalf("supported smoke check: %v", err)
+	}
+	if err := runProxy([]string{"--require-capability=unknown", "-h"}); err == nil {
+		t.Fatal("help hid an unsupported capability at the CLI entry point")
 	}
 }
 
