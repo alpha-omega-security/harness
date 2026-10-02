@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -761,5 +762,83 @@ func TestFirstIfaceIPv4(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s: firstIfaceIPv4 = %q, %v, want %q", c.name, got, err, c.want)
 		}
+	}
+}
+
+// TestEgressProxy_ForwardStreamsEventStream proves a forwarded event stream
+// reaches the client as it arrives. The upstream withholds its second event
+// until the client has read the first, so a proxy that buffers the body
+// instead of flushing it times out rather than passing.
+func TestEgressProxy_ForwardStreamsEventStream(t *testing.T) {
+	firstSeen := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "event: one\ndata: {}\n\n")
+		_ = http.NewResponseController(w).Flush()
+		select {
+		case <-firstSeen:
+		case <-r.Context().Done():
+			return
+		}
+		_, _ = io.WriteString(w, "event: two\ndata: {}\n\n")
+	}))
+	defer upstream.Close()
+	host, port, _ := net.SplitHostPort(upstream.Listener.Addr().String())
+
+	p := &Proxy{Allow: []string{HostGatewayAlias}, APIPort: port, GatewayDialHost: host, Log: quietLog()}
+	proxy := httptest.NewServer(p)
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(HostGatewayAlias, port)+"/events", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("forward request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("first event did not stream through the proxy: %v", err)
+	}
+	if line != "event: one\n" {
+		t.Fatalf("first line = %q, want %q", line, "event: one\n")
+	}
+	close(firstSeen)
+	rest, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read rest of stream: %v", err)
+	}
+	if !strings.Contains(string(rest), "event: two") {
+		t.Fatalf("stream missing second event: %q", rest)
+	}
+}
+
+func TestStreamingResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		contentType   string
+		contentLength int64
+		want          bool
+	}{
+		{"event stream", "text/event-stream", -1, true},
+		{"event stream with parameters", "text/event-stream; charset=utf-8", 1024, true},
+		{"unknown length body", "application/json", -1, true},
+		{"known length body", "application/json", 1024, false},
+		{"known length without a type", "", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{Header: http.Header{}, ContentLength: tc.contentLength}
+			if tc.contentType != "" {
+				resp.Header.Set("Content-Type", tc.contentType)
+			}
+			if got := streamingResponse(resp); got != tc.want {
+				t.Errorf("streamingResponse = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

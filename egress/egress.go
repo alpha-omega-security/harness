@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"net/netip"
@@ -316,7 +317,41 @@ func (p *Proxy) serveForward(w http.ResponseWriter, r *http.Request) {
 	stripHopByHop(resp.Header)
 	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	copyResponseBody(w, resp)
+}
+
+// copyResponseBody relays a forwarded response body. A streamed response is
+// flushed after every read so server-sent events reach the client as they
+// arrive instead of sitting in the server's output buffer; any other body is
+// copied in bulk. This follows httputil.ReverseProxy, which flushes at once
+// for text/event-stream and for bodies of unknown length.
+func copyResponseBody(w http.ResponseWriter, resp *http.Response) {
+	if !streamingResponse(resp) {
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.Flush() // send the headers before the first event
+	buf := make([]byte, egressCopyBuf)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return
+			}
+			_ = rc.Flush()
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// streamingResponse reports whether a response must be flushed as it is
+// copied: an event stream, or a body whose length the upstream did not declare.
+func streamingResponse(resp *http.Response) bool {
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return mediaType == "text/event-stream" || resp.ContentLength == -1
 }
 
 // apiGatewayDialKey marks the one intentionally non-public dial path: a request
