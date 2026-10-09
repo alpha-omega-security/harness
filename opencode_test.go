@@ -33,7 +33,7 @@ func TestOpencodeStream(t *testing.T) {
 	OpencodeHarness{}.ParseStream(strings.NewReader(input), func(event Event) {
 		events = append(events, event)
 	})
-	if len(events) != 6 {
+	if len(events) != 7 {
 		t.Fatalf("got %d events: %+v", len(events), events)
 	}
 	if events[2].Kind != KindThinking {
@@ -42,7 +42,23 @@ func TestOpencodeStream(t *testing.T) {
 	if events[3].Kind != KindTool || events[3].Text != "go test ./..." {
 		t.Errorf("tool event = %+v", events[3])
 	}
-	if events[4].Kind != KindResult || events[4].Usage.OutputTokens != 7 {
-		t.Errorf("result event = %+v", events[4])
+	wantUsage := Usage{InputTokens: 100, OutputTokens: 7, CacheReadTokens: 20, CacheWriteTokens: 3}
+	if events[4].Kind != KindUsage || events[4].Usage != wantUsage || events[4].CostUSD != 0.2 {
+		t.Errorf("usage event = %+v", events[4])
+	}
+	if events[5].Kind != KindResult || events[5].Usage.OutputTokens != 7 {
+		t.Errorf("result event = %+v", events[5])
+	}
+}
+
+func TestOpencodeStepFinishWithoutUsageEmitsOnlyResult(t *testing.T) {
+	t.Parallel()
+
+	var events []Event
+	OpencodeHarness{}.ParseStream(strings.NewReader(`{"type":"step_finish","part":{"type":"step-finish","cost":0}}`), func(event Event) {
+		events = append(events, event)
+	})
+	if len(events) != 1 || events[0].Kind != KindResult {
+		t.Errorf("events = %+v, want only the result", events)
 	}
 }

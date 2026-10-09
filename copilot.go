@@ -189,7 +189,7 @@ func (state *copilotStreamState) parseLine(raw []byte, emit func(Event)) {
 	case "assistant.usage":
 		var data copilotUsageData
 		if json.Unmarshal(event.Data, &data) == nil {
-			state.addUsage(data)
+			emit(state.addUsage(data))
 			emitCopilotRateLimits(data.QuotaSnapshots, emit)
 		}
 	case "session.usage_checkpoint":
@@ -315,18 +315,23 @@ func (state *copilotStreamState) recordResultText(data copilotMessageData) {
 	state.result.Text = strings.Join(state.resultChunks, "")
 }
 
-func (state *copilotStreamState) addUsage(data copilotUsageData) {
+// addUsage folds one call into the result total and returns it as a usage
+// event. Copilot's InputTokens already include cache, which CostFromUsage
+// expects.
+func (state *copilotStreamState) addUsage(data copilotUsageData) Event {
 	usage := Usage{
 		InputTokens:      data.InputTokens,
 		OutputTokens:     data.OutputTokens,
 		CacheReadTokens:  data.CacheReadTokens,
 		CacheWriteTokens: data.CacheWriteTokens,
 	}
-	state.estimatedCostUSD += CostFromUsage(data.Model, usage)
+	cost := CostFromUsage(data.Model, usage)
+	state.estimatedCostUSD += cost
 	state.result.Usage.InputTokens += usage.InputTokens
 	state.result.Usage.OutputTokens += usage.OutputTokens
 	state.result.Usage.CacheReadTokens += usage.CacheReadTokens
 	state.result.Usage.CacheWriteTokens += usage.CacheWriteTokens
+	return Event{Kind: KindUsage, Model: data.Model, Usage: usage, CostUSD: cost}
 }
 
 const (

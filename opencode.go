@@ -103,6 +103,10 @@ func parseOpencodeLine(raw []byte, emit func(Event)) {
 	case isOpencodeTextEvent(event):
 		emit(Event{Kind: KindText, Text: event.Part.Text})
 	case event.Type == "step_finish" && event.Part != nil:
+		usage := opencodeUsage(event.Part.Tokens)
+		if usage != (Usage{}) || event.Part.Cost != 0 {
+			emit(Event{Kind: KindUsage, CostUSD: event.Part.Cost, Usage: usage})
+		}
 		emit(Event{
 			Kind:    KindResult,
 			CostUSD: event.Part.Cost,

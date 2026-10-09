@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"io"
 	"math"
 	"os"
 	"slices"
@@ -71,10 +72,7 @@ func TestCopilotStreamFixture(t *testing.T) {
 	}
 	defer func() { _ = file.Close() }()
 
-	var events []Event
-	CopilotHarness{}.ParseStream(file, func(event Event) {
-		events = append(events, event)
-	})
+	events := collectNonUsage(t, file)
 	if len(events) != 5 {
 		t.Fatalf("got %d events: %+v", len(events), events)
 	}
@@ -118,10 +116,7 @@ func TestCopilotStreamAccumulatesOneTerminalResult(t *testing.T) {
 		`{"type":"result","sessionId":"session-1","exitCode":0}`,
 	}, "\n")
 
-	var events []Event
-	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
-		events = append(events, event)
-	})
+	events := collectNonUsage(t, strings.NewReader(stream))
 	if len(events) != 2 {
 		t.Fatalf("events = %+v, want session and one result", events)
 	}
@@ -159,10 +154,7 @@ func TestCopilotStreamUsesLatestUsageCheckpointCost(t *testing.T) {
 		`{"type":"result","sessionId":"session-1","exitCode":0}`,
 	}, "\n")
 
-	var events []Event
-	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
-		events = append(events, event)
-	})
+	events := collectNonUsage(t, strings.NewReader(stream))
 	if len(events) != 2 {
 		t.Fatalf("events = %+v, want session and result", events)
 	}
@@ -247,10 +239,7 @@ func TestCopilotStreamFiltersSubagentConversation(t *testing.T) {
 		`{"type":"result","sessionId":"session-1","exitCode":0}`,
 	}, "\n")
 
-	var events []Event
-	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
-		events = append(events, event)
-	})
+	events := collectNonUsage(t, strings.NewReader(stream))
 	if len(events) != 4 {
 		t.Fatalf("events = %+v", events)
 	}
@@ -325,10 +314,7 @@ func TestCopilotStreamErrorEvents(t *testing.T) {
 		`{"type":"result","sessionId":"session-1","exitCode":2}`,
 	}, "\n")
 
-	var events []Event
-	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
-		events = append(events, event)
-	})
+	events := collectNonUsage(t, strings.NewReader(stream))
 	want := []Event{
 		{Kind: KindError, Text: "upstream 503 (gpt-5.6-sol, upstream, ServiceUnavailable, status 503)"},
 		{Kind: KindError, Text: "quota exceeded (quota_exceeded, status 429)"},
@@ -351,11 +337,57 @@ func TestCopilotStreamRequiresTerminalEnvelope(t *testing.T) {
 	t.Parallel()
 
 	stream := `{"type":"assistant.usage","data":{"model":"claude-sonnet-4.6","inputTokens":100}}`
+	events := collectNonUsage(t, strings.NewReader(stream))
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want none without a result envelope", events)
+	}
+}
+
+// collectNonUsage parses a stream and drops usage events, which dedicated
+// tests cover.
+func collectNonUsage(_ *testing.T, r io.Reader) []Event {
+	var events []Event
+	CopilotHarness{}.ParseStream(r, func(event Event) {
+		if event.Kind != KindUsage {
+			events = append(events, event)
+		}
+	})
+	return events
+}
+
+func TestCopilotStreamEmitsUsageEvents(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		`{"type":"assistant.usage","data":{"model":"claude-sonnet-4.6","inputTokens":100,"outputTokens":10,"cacheReadTokens":20,"cacheWriteTokens":5}}`,
+		`{"type":"assistant.usage","agentId":"child-1","data":{"model":"claude-sonnet-4.6","inputTokens":50,"outputTokens":5}}`,
+		`{"type":"result","sessionId":"session-1","exitCode":0}`,
+	}, "\n")
+
 	var events []Event
 	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
 		events = append(events, event)
 	})
-	if len(events) != 0 {
-		t.Fatalf("events = %+v, want none without a result envelope", events)
+	if len(events) != 4 {
+		t.Fatalf("events = %+v, want two usage then session and result", events)
+	}
+	want := []Usage{
+		{InputTokens: 100, OutputTokens: 10, CacheReadTokens: 20, CacheWriteTokens: 5},
+		{InputTokens: 50, OutputTokens: 5},
+	}
+	var total float64
+	for i, usage := range want {
+		got := events[i]
+		if got.Kind != KindUsage || got.Model != "claude-sonnet-4.6" || got.Usage != usage {
+			t.Errorf("usage event %d = %+v", i, got)
+		}
+		if wantCost := CostFromUsage("claude-sonnet-4.6", usage); got.CostUSD != wantCost || wantCost <= 0 {
+			t.Errorf("usage event %d cost = %v, want %v", i, got.CostUSD, wantCost)
+		}
+		total += got.CostUSD
+	}
+	result := events[3]
+	if result.Kind != KindResult || result.Usage.InputTokens != 150 || result.CostUSD != total {
+		t.Errorf("result = %+v", result)
 	}
 }

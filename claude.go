@@ -22,6 +22,7 @@ func (ClaudeHarness) Args(j Job) []string {
 		"-p",
 		"--output-format", "stream-json",
 		"--verbose",
+		"--include-partial-messages",
 	}
 	if j.Model != "" {
 		args = append(args, "--model", j.Model)
@@ -81,7 +82,8 @@ func (ClaudeHarness) Prompt(j Job) string {
 // reader rather than Scanner so an oversized thinking or tool-result line
 // cannot discard the later result event that carries usage and turn counts.
 func (ClaudeHarness) ParseStream(r io.Reader, emit func(Event)) {
-	scanJSONL(r, emit, parseClaudeLine)
+	state := newClaudeStreamState()
+	scanJSONL(r, emit, state.parseLine)
 }
 
 func (ClaudeHarness) SkillDir(workspace, name string) string {
@@ -140,19 +142,49 @@ func (ClaudeHarness) DefaultModels() []ModelDefault {
 }
 
 type claudeLine struct {
-	Type          string          `json:"type"`
-	Subtype       string          `json:"subtype"`
-	SessionID     string          `json:"session_id"`
-	Message       *claudeMessage  `json:"message"`
-	Result        json.RawMessage `json:"result"`
-	CostUSD       *float64        `json:"total_cost_usd"`
-	NumTurns      *int            `json:"num_turns"`
-	Usage         *Usage          `json:"usage"`
-	Error         json.RawMessage `json:"error"`
-	RateLimitInfo *RateLimitInfo  `json:"rate_limit_info"`
+	Type          string             `json:"type"`
+	Subtype       string             `json:"subtype"`
+	SessionID     string             `json:"session_id"`
+	Message       *claudeMessage     `json:"message"`
+	Result        json.RawMessage    `json:"result"`
+	CostUSD       *float64           `json:"total_cost_usd"`
+	NumTurns      *int               `json:"num_turns"`
+	Usage         *Usage             `json:"usage"`
+	Error         json.RawMessage    `json:"error"`
+	RateLimitInfo *RateLimitInfo     `json:"rate_limit_info"`
+	Event         *claudeStreamEvent `json:"event"`
+	APIMessageID  string             `json:"api_message_id"`
+}
+
+// claudeStreamEvent is the inner event of a stream_event line, emitted with
+// --include-partial-messages.
+type claudeStreamEvent struct {
+	Type    string         `json:"type"`
+	Message *claudeMessage `json:"message"`
+	Usage   *claudeUsage   `json:"usage"`
+}
+
+// claudeUsage adds the cache-write split to Usage. Claude Code writes one-hour
+// cache entries, which bill at a higher rate than the five-minute writes the
+// pricing table assumes.
+type claudeUsage struct {
+	Usage
+	CacheCreation *struct {
+		OneHourTokens int `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
+}
+
+func (u *claudeUsage) oneHourWrites() int {
+	if u.CacheCreation == nil {
+		return 0
+	}
+	return u.CacheCreation.OneHourTokens
 }
 
 type claudeMessage struct {
+	ID      string          `json:"id"`
+	Model   string          `json:"model"`
+	Usage   *claudeUsage    `json:"usage"`
 	Content []claudeContent `json:"content"`
 }
 
@@ -164,7 +196,82 @@ type claudeContent struct {
 	Input    json.RawMessage `json:"input"`
 }
 
-func parseClaudeLine(raw []byte, emit func(Event)) {
+// claudeStreamState tracks the highest usage already reported per API message.
+// One message arrives as several assistant lines that repeat the same usage
+// snapshot plus stream_event lines that refine it, so usage events carry only
+// the growth since the last report.
+type claudeStreamState struct {
+	reported map[string]claudeReported
+	models   map[string]string
+}
+
+// claudeReported is the highest usage already reported for one API message.
+type claudeReported struct {
+	usage         Usage
+	oneHourWrites int
+}
+
+func newClaudeStreamState() *claudeStreamState {
+	return &claudeStreamState{reported: map[string]claudeReported{}, models: map[string]string{}}
+}
+
+// reportUsage emits a usage event for the growth of id's usage over what was
+// already reported. Repeated assistant lines and zero-usage synthetic messages
+// therefore emit nothing.
+func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage, emit func(Event)) {
+	if id == "" || usage == nil {
+		return
+	}
+	prev := state.reported[id]
+	delta := Usage{
+		InputTokens:      max(usage.InputTokens-prev.usage.InputTokens, 0),
+		OutputTokens:     max(usage.OutputTokens-prev.usage.OutputTokens, 0),
+		CacheReadTokens:  max(usage.CacheReadTokens-prev.usage.CacheReadTokens, 0),
+		CacheWriteTokens: max(usage.CacheWriteTokens-prev.usage.CacheWriteTokens, 0),
+	}
+	oneHourWrites := max(usage.oneHourWrites()-prev.oneHourWrites, 0)
+	state.reported[id] = claudeReported{
+		usage: Usage{
+			InputTokens:      max(usage.InputTokens, prev.usage.InputTokens),
+			OutputTokens:     max(usage.OutputTokens, prev.usage.OutputTokens),
+			CacheReadTokens:  max(usage.CacheReadTokens, prev.usage.CacheReadTokens),
+			CacheWriteTokens: max(usage.CacheWriteTokens, prev.usage.CacheWriteTokens),
+		},
+		oneHourWrites: max(usage.oneHourWrites(), prev.oneHourWrites),
+	}
+	if delta == (Usage{}) {
+		return
+	}
+	// Claude's input_tokens excludes cache reads and writes while
+	// CostFromUsage expects InputTokens to include every prompt token. Price
+	// a copy so the emitted Usage keeps the convention of the result event.
+	priced := delta
+	priced.InputTokens += delta.CacheReadTokens + delta.CacheWriteTokens
+	cost := CostFromUsage(model, priced) + oneHourCacheWriteSurcharge(model, oneHourWrites)
+	emit(Event{Kind: KindUsage, Model: model, Usage: delta, CostUSD: cost})
+}
+
+// handleStreamEvent reports usage from partial-message events and stays silent
+// for every other stream event so deltas never reach the log.
+func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(Event)) {
+	if message.Event == nil {
+		return
+	}
+	switch message.Event.Type {
+	case "message_start":
+		if m := message.Event.Message; m != nil {
+			if m.Model != "" {
+				state.models[m.ID] = m.Model
+			}
+			state.reportUsage(m.ID, state.models[m.ID], m.Usage, emit)
+		}
+	case "message_delta":
+		id := message.APIMessageID
+		state.reportUsage(id, state.models[id], message.Event.Usage, emit)
+	}
+}
+
+func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 	line := strings.TrimSpace(string(raw))
 	if line == "" {
 		return
@@ -186,6 +293,13 @@ func parseClaudeLine(raw []byte, emit func(Event)) {
 		}
 	case "assistant":
 		emitClaudeAssistant(message.Message, emit)
+		// Subagent calls emit no stream_event lines, so they only reach here
+		// and their output tokens are a lower bound until the result event.
+		if m := message.Message; m != nil {
+			state.reportUsage(m.ID, m.Model, m.Usage, emit)
+		}
+	case "stream_event":
+		state.handleStreamEvent(message, emit)
 	case "result":
 		emit(claudeResultEvent(message))
 		if message.Subtype == "error_max_turns" {
