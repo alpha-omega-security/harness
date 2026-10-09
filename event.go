@@ -43,16 +43,24 @@ const (
 // CostUSD, Turns, Usage, SessionID, and RateLimit are populated only for their
 // corresponding Kind. Model is set on usage events while Usage and CostUSD are
 // populated on both usage and result events.
+//
+// A result's CostUSD is what that result added, so callers can sum it across
+// the results of one invocation. SessionCostUSD is set only when the backend
+// reports a cumulative session cost (Claude, or Copilot's billing checkpoint).
+// A caller resuming a session subtracts the SessionCostUSD it recorded for the
+// earlier invocation, because the first result of a resumed invocation still
+// includes that cost.
 type Event struct {
-	Kind      string
-	Tool      string
-	Text      string
-	CostUSD   float64
-	Turns     int
-	Usage     Usage
-	Model     string
-	SessionID string
-	RateLimit *RateLimitInfo
+	Kind           string
+	Tool           string
+	Text           string
+	CostUSD        float64
+	SessionCostUSD float64
+	Turns          int
+	Usage          Usage
+	Model          string
+	SessionID      string
+	RateLimit      *RateLimitInfo
 }
 
 // Usage is the token accounting of a result or usage event.

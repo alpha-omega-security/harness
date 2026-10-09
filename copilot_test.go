@@ -140,6 +140,10 @@ func TestCopilotStreamAccumulatesOneTerminalResult(t *testing.T) {
 	if math.Abs(result.CostUSD-wantCost) > 1e-12 {
 		t.Errorf("cost = %.12f, want %.12f", result.CostUSD, wantCost)
 	}
+	// A list-price estimate is per invocation, not a session total.
+	if result.SessionCostUSD != 0 {
+		t.Errorf("session cost = %v, want 0 without a checkpoint", result.SessionCostUSD)
+	}
 }
 
 func TestCopilotStreamUsesLatestUsageCheckpointCost(t *testing.T) {
@@ -165,6 +169,9 @@ func TestCopilotStreamUsesLatestUsageCheckpointCost(t *testing.T) {
 	const wantCostUSD = 0.08148135
 	if math.Abs(result.CostUSD-wantCostUSD) > 1e-12 {
 		t.Errorf("cost = %.12f, want checkpoint %.12f", result.CostUSD, wantCostUSD)
+	}
+	if result.SessionCostUSD != result.CostUSD {
+		t.Errorf("session cost = %.12f, want the checkpoint %.12f", result.SessionCostUSD, result.CostUSD)
 	}
 }
 

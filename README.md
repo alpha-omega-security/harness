@@ -110,12 +110,13 @@ type Event struct {
     Kind      string
     Tool      string
     Text      string
-    CostUSD   float64
-    Turns     int
-    Usage     Usage
-    Model     string
-    SessionID string
-    RateLimit *RateLimitInfo
+    CostUSD        float64
+    SessionCostUSD float64
+    Turns          int
+    Usage          Usage
+    Model          string
+    SessionID      string
+    RateLimit      *RateLimitInfo
 }
 ```
 
@@ -125,6 +126,14 @@ Kinds are `thinking`, `text`, `tool`, `result`, `usage`, `error`, `session`,
 without a dollar amount. Copilot's `CostUSD` uses the latest cumulative
 `session.usage_checkpoint` when one is present, so on a resumed Copilot session
 the reported cost is session-cumulative rather than per-invocation.
+
+Claude's `total_cost_usd` is cumulative too, both across the several results
+one invocation can print and across `--resume`. Each Claude result's `CostUSD`
+is therefore what that result added within the invocation. The raw total is
+kept on `SessionCostUSD`. Copilot sets `SessionCostUSD` from its checkpoint.
+When resuming a session, subtract the `SessionCostUSD` recorded for the earlier
+invocation from the first result's `CostUSD`, since it still includes that
+cost.
 
 A `usage` event reports the tokens one model call added, with its `Model` and a
 list-price `CostUSD` estimate (zero for an unknown model). Summing them gives a

@@ -255,3 +255,53 @@ func TestClaudeUsageEventsPriceOneHourCacheWritesOnce(t *testing.T) {
 		t.Errorf("summed cost = %v, want %v", total, want)
 	}
 }
+
+func TestClaudeResultCostIsIncrementalWithinStream(t *testing.T) {
+	t.Parallel()
+
+	// A background subagent makes Claude print a second result. Each carries
+	// the session total so far (values from a real CLI run).
+	input := strings.Join([]string{
+		`{"type":"result","subtype":"success","result":"launched","total_cost_usd":0.03,"num_turns":2,"usage":{"input_tokens":18,"output_tokens":297}}`,
+		`{"type":"result","subtype":"success","result":"hello","total_cost_usd":0.04407415,"num_turns":1,"usage":{"input_tokens":10,"output_tokens":60}}`,
+		`{"type":"result","subtype":"success","result":"again","total_cost_usd":0.04407415,"num_turns":1,"usage":{"input_tokens":1,"output_tokens":1}}`,
+	}, "\n")
+
+	var results []Event
+	for _, event := range claudeEvents(input) {
+		if event.Kind == KindResult {
+			results = append(results, event)
+		}
+	}
+	if len(results) != 3 {
+		t.Fatalf("results = %+v, want 3", results)
+	}
+	wantCost := []float64{0.03, 0.01407415, 0}
+	var total float64
+	for i, result := range results {
+		if math.Abs(result.CostUSD-wantCost[i]) > 1e-12 {
+			t.Errorf("result %d cost = %v, want %v", i, result.CostUSD, wantCost[i])
+		}
+		total += result.CostUSD
+	}
+	if math.Abs(total-0.04407415) > 1e-12 {
+		t.Errorf("summed cost = %v, want the session total 0.04407415", total)
+	}
+	if results[0].SessionCostUSD != 0.03 || results[2].SessionCostUSD != 0.04407415 {
+		t.Errorf("session costs = %v, %v", results[0].SessionCostUSD, results[2].SessionCostUSD)
+	}
+	// Tokens and turns already cover only their own result, so they pass
+	// through unchanged.
+	if results[1].Turns != 1 || results[1].Usage.OutputTokens != 60 {
+		t.Errorf("second result = %+v", results[1])
+	}
+}
+
+func TestClaudeResultWithoutCostLeavesSessionCostUnset(t *testing.T) {
+	t.Parallel()
+
+	events := claudeEvents(`{"type":"result","result":"ok","num_turns":1}`)
+	if len(events) != 1 || events[0].CostUSD != 0 || events[0].SessionCostUSD != 0 {
+		t.Errorf("events = %+v", events)
+	}
+}

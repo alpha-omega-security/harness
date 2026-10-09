@@ -207,6 +207,8 @@ type claudeStreamState struct {
 	// Main-thread stream events are sequential and subagents emit none, so a
 	// message_delta without api_message_id belongs to it.
 	current string
+	// sessionCostUSD is the latest cumulative total_cost_usd in the stream.
+	sessionCostUSD float64
 }
 
 // claudeReported is the highest usage already reported for one API message.
@@ -311,7 +313,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 	case "stream_event":
 		state.handleStreamEvent(message, emit)
 	case "result":
-		emit(claudeResultEvent(message))
+		emit(state.resultEvent(message))
 		if message.Subtype == "error_max_turns" {
 			emit(Event{Kind: KindError, Text: "hit max turns"})
 		}
@@ -351,6 +353,22 @@ func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
 			emit(Event{Kind: KindTool, Tool: block.Name, Text: summariseInput(block.Name, block.Input)})
 		}
 	}
+}
+
+// resultEvent turns Claude's cumulative total_cost_usd into the cost this
+// result added. One invocation can print several results, for example when a
+// background subagent finishes after the main loop. Each repeats the session
+// total so far. The raw total stays on SessionCostUSD for callers that
+// resume the session.
+func (state *claudeStreamState) resultEvent(message claudeLine) Event {
+	event := claudeResultEvent(message)
+	if message.CostUSD != nil {
+		total := *message.CostUSD
+		event.SessionCostUSD = total
+		event.CostUSD = max(total-state.sessionCostUSD, 0)
+		state.sessionCostUSD = max(total, state.sessionCostUSD)
+	}
+	return event
 }
 
 func claudeResultEvent(message claudeLine) Event {

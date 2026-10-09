@@ -66,6 +66,7 @@ func (CopilotHarness) ParseStream(r io.Reader, emit func(Event)) {
 	state.result.CostUSD = state.estimatedCostUSD
 	if state.sawCheckpoint {
 		state.result.CostUSD = state.checkpointCostUSD
+		state.result.SessionCostUSD = state.checkpointCostUSD
 	}
 	emit(state.result)
 }
