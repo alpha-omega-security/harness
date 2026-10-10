@@ -110,20 +110,40 @@ type Event struct {
     Kind      string
     Tool      string
     Text      string
-    CostUSD   float64
-    Turns     int
-    Usage     Usage
-    SessionID string
-    RateLimit *RateLimitInfo
+    CostUSD        float64
+    SessionCostUSD float64
+    Turns          int
+    Usage          Usage
+    Model          string
+    SessionID      string
+    RateLimit      *RateLimitInfo
 }
 ```
 
-Kinds are `thinking`, `text`, `tool`, `result`, `error`, `session`, and
-`rate_limit`. `FormatEvent` renders an event for a plain-text log.
+Kinds are `thinking`, `text`, `tool`, `result`, `usage`, `error`, `session`,
+`rate_limit` and `egress`. `FormatEvent` renders an event for a plain-text log.
 `CostFromUsage` calculates a list-price estimate when the CLI reports tokens
 without a dollar amount. Copilot's `CostUSD` uses the latest cumulative
 `session.usage_checkpoint` when one is present, so on a resumed Copilot session
 the reported cost is session-cumulative rather than per-invocation.
+
+Claude's `total_cost_usd` is cumulative too, both across the several results
+one invocation can print and across `--resume`. Each Claude result's `CostUSD`
+is therefore what that result added within the invocation. The raw total is
+kept on `SessionCostUSD`. Copilot sets `SessionCostUSD` from its checkpoint.
+When resuming a session, subtract the `SessionCostUSD` recorded for the earlier
+invocation from the first result's `CostUSD` only if that result also sets
+`SessionCostUSD`, since its cost then still includes the earlier invocation. A
+resumed Copilot result with no checkpoint has `SessionCostUSD` 0 and a
+per-invocation `CostUSD`, so use it unchanged.
+
+A `usage` event reports the tokens one model call added, with its `Model` and a
+list-price `CostUSD` estimate (zero for an unknown model). Summing them gives a
+running estimate while a run is in progress, but the `result` event stays the
+authoritative total, so do not add usage events to it. Claude needs no caller
+change because `Args` adds `--include-partial-messages`. Subagent output tokens
+are a lower bound until the result arrives. Codex reports usage only in its
+result and emits no usage events.
 
 ## Run a local subprocess
 
