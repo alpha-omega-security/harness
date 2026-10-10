@@ -260,11 +260,13 @@ func TestClaudeResultCostIsIncrementalWithinStream(t *testing.T) {
 	t.Parallel()
 
 	// A background subagent makes Claude print a second result. Each carries
-	// the session total so far (values from a real CLI run).
+	// the session total so far. The first two are from the real CLI run in
+	// scrutineer#1159: the first result is already the full total and the
+	// second adds nothing. The third is synthetic and adds new spend.
 	input := strings.Join([]string{
-		`{"type":"result","subtype":"success","result":"launched","total_cost_usd":0.03,"num_turns":2,"usage":{"input_tokens":18,"output_tokens":297}}`,
+		`{"type":"result","subtype":"success","result":"launched","total_cost_usd":0.04407415,"num_turns":2,"usage":{"input_tokens":18,"output_tokens":297}}`,
 		`{"type":"result","subtype":"success","result":"hello","total_cost_usd":0.04407415,"num_turns":1,"usage":{"input_tokens":10,"output_tokens":60}}`,
-		`{"type":"result","subtype":"success","result":"again","total_cost_usd":0.04407415,"num_turns":1,"usage":{"input_tokens":1,"output_tokens":1}}`,
+		`{"type":"result","subtype":"success","result":"again","total_cost_usd":0.05,"num_turns":1,"usage":{"input_tokens":1,"output_tokens":1}}`,
 	}, "\n")
 
 	var results []Event
@@ -276,7 +278,7 @@ func TestClaudeResultCostIsIncrementalWithinStream(t *testing.T) {
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want 3", results)
 	}
-	wantCost := []float64{0.03, 0.01407415, 0}
+	wantCost := []float64{0.04407415, 0, 0.00592585}
 	var total float64
 	for i, result := range results {
 		if math.Abs(result.CostUSD-wantCost[i]) > 1e-12 {
@@ -284,10 +286,10 @@ func TestClaudeResultCostIsIncrementalWithinStream(t *testing.T) {
 		}
 		total += result.CostUSD
 	}
-	if math.Abs(total-0.04407415) > 1e-12 {
-		t.Errorf("summed cost = %v, want the session total 0.04407415", total)
+	if math.Abs(total-0.05) > 1e-12 {
+		t.Errorf("summed cost = %v, want the session total 0.05", total)
 	}
-	if results[0].SessionCostUSD != 0.03 || results[2].SessionCostUSD != 0.04407415 {
+	if results[0].SessionCostUSD != 0.04407415 || results[2].SessionCostUSD != 0.05 {
 		t.Errorf("session costs = %v, %v", results[0].SessionCostUSD, results[2].SessionCostUSD)
 	}
 	// Tokens and turns already cover only their own result, so they pass

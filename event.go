@@ -47,9 +47,11 @@ const (
 // A result's CostUSD is what that result added, so callers can sum it across
 // the results of one invocation. SessionCostUSD is set only when the backend
 // reports a cumulative session cost (Claude, or Copilot's billing checkpoint).
-// A caller resuming a session subtracts the SessionCostUSD it recorded for the
-// earlier invocation, because the first result of a resumed invocation still
-// includes that cost.
+// When the first result of a resumed invocation also sets SessionCostUSD, its
+// CostUSD still includes the earlier invocation's cost, so a caller subtracts
+// the SessionCostUSD it recorded for that invocation. A resumed result without
+// SessionCostUSD (Copilot with no checkpoint) carries a per-invocation estimate
+// and is used unchanged.
 type Event struct {
 	Kind           string
 	Tool           string

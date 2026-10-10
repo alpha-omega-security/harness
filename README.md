@@ -132,8 +132,10 @@ one invocation can print and across `--resume`. Each Claude result's `CostUSD`
 is therefore what that result added within the invocation. The raw total is
 kept on `SessionCostUSD`. Copilot sets `SessionCostUSD` from its checkpoint.
 When resuming a session, subtract the `SessionCostUSD` recorded for the earlier
-invocation from the first result's `CostUSD`, since it still includes that
-cost.
+invocation from the first result's `CostUSD` only if that result also sets
+`SessionCostUSD`, since its cost then still includes the earlier invocation. A
+resumed Copilot result with no checkpoint has `SessionCostUSD` 0 and a
+per-invocation `CostUSD`, so use it unchanged.
 
 A `usage` event reports the tokens one model call added, with its `Model` and a
 list-price `CostUSD` estimate (zero for an unknown model). Summing them gives a
