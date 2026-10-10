@@ -132,6 +132,8 @@ func parseCodexLine(raw []byte, emit func(Event)) {
 	case event.Type == "turn.started":
 		// This marker has no payload; completed items carry the content.
 	case event.Type == "turn.completed":
+		// Codex reports usage only here, which is already the result event, so
+		// it emits no usage events.
 		var usage Usage
 		if event.Usage != nil {
 			usage = Usage{

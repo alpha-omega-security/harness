@@ -70,13 +70,7 @@ const perMillion = 1e6
 // subset. CacheWriteTokens is separate only for models with a dedicated write
 // rate; it remains ordinary input when CacheWrite is zero.
 func CostFromUsage(model string, usage Usage) float64 {
-	model = normalizeModelID(model)
-	// Daybreak Blue currently aliases Sol and shares its pricing.
-	// https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest
-	if model == modelDaybreakBlueID {
-		model = modelGPT56SolID
-	}
-	price, ok := modelPricing[model]
+	price, ok := lookupPrice(model)
 	if !ok {
 		return 0
 	}
@@ -93,14 +87,60 @@ func CostFromUsage(model string, usage Usage) float64 {
 		float64(usage.OutputTokens)*price.Out) / perMillion
 }
 
-// normalizeModelID removes OpenCode's provider prefix and a context-window
-// variant suffix so all backends share one base-model pricing key.
+// lookupPrice finds a model's list price under its normalized id.
+func lookupPrice(model string) (modelPrice, bool) {
+	model = normalizeModelID(model)
+	// Daybreak Blue currently aliases Sol and shares its pricing.
+	// https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest
+	if model == modelDaybreakBlueID {
+		model = modelGPT56SolID
+	}
+	price, ok := modelPricing[model]
+	return price, ok
+}
+
+// oneHourCacheWriteMultiplier is Anthropic's one-hour cache write rate as a
+// multiple of the base input rate. The table's CacheWrite is the five-minute
+// rate.
+const oneHourCacheWriteMultiplier = 2
+
+// oneHourCacheWriteSurcharge is the cost tokens written to the one-hour cache
+// add on top of the five-minute write rate CostFromUsage already charged them.
+// It is zero for an unknown model or one without a dedicated write rate.
+func oneHourCacheWriteSurcharge(model string, tokens int) float64 {
+	price, ok := lookupPrice(model)
+	if !ok || price.CacheWrite == 0 || tokens <= 0 {
+		return 0
+	}
+	return float64(tokens) * (oneHourCacheWriteMultiplier*price.In - price.CacheWrite) / perMillion
+}
+
+// normalizeModelID removes OpenCode's provider prefix, a context-window
+// variant suffix and a trailing -YYYYMMDD date so all backends share one
+// base-model pricing key.
 func normalizeModelID(id string) string {
 	if slash := strings.LastIndexByte(id, '/'); slash >= 0 {
 		id = id[slash+1:]
 	}
 	if bracket := strings.IndexByte(id, '['); bracket > 0 {
-		return id[:bracket]
+		id = id[:bracket]
 	}
-	return id
+	return trimDateSuffix(id)
+}
+
+const dateSuffixDigits = 8
+
+// trimDateSuffix strips a final hyphen followed by exactly eight digits, as in
+// claude-haiku-4-5-20251001.
+func trimDateSuffix(id string) string {
+	cut := len(id) - dateSuffixDigits - 1
+	if cut <= 0 || id[cut] != '-' {
+		return id
+	}
+	for _, c := range id[cut+1:] {
+		if c < '0' || c > '9' {
+			return id
+		}
+	}
+	return id[:cut]
 }

@@ -17,6 +17,15 @@ const (
 	KindRateLimit = "rate_limit"
 	KindEgress    = "egress"
 
+	// KindUsage reports the tokens a model call added since the previous
+	// usage event for the same call. Its CostUSD is a list-price estimate for
+	// those tokens (zero when the model's price is unknown). Summing usage
+	// events gives a running estimate while a run is in progress, but the
+	// result event stays the authoritative total, so callers must not add
+	// usage events to result totals. Usage follows the same token convention
+	// as the backend's result event.
+	KindUsage = "usage"
+
 	lineLimit = 300
 )
 
@@ -32,7 +41,8 @@ const (
 
 // Event is one backend-neutral item from an agent's output stream. Tool,
 // CostUSD, Turns, Usage, SessionID, and RateLimit are populated only for their
-// corresponding Kind.
+// corresponding Kind. Model is set on usage events while Usage and CostUSD are
+// populated on both usage and result events.
 type Event struct {
 	Kind      string
 	Tool      string
@@ -40,11 +50,12 @@ type Event struct {
 	CostUSD   float64
 	Turns     int
 	Usage     Usage
+	Model     string
 	SessionID string
 	RateLimit *RateLimitInfo
 }
 
-// Usage is a result event's token accounting.
+// Usage is the token accounting of a result or usage event.
 type Usage struct {
 	InputTokens      int `json:"input_tokens"`
 	OutputTokens     int `json:"output_tokens"`
@@ -118,6 +129,15 @@ func truncate(s string) string {
 	return s[:lineLimit] + fmt.Sprintf("... (%d chars)", len(s))
 }
 
+func formatUsageEvent(e Event) string {
+	line := "[usage]"
+	if e.Model != "" {
+		line += " " + e.Model
+	}
+	return line + fmt.Sprintf(" in=%d out=%d cache_read=%d cache_write=%d cost=$%.4f",
+		e.Usage.InputTokens, e.Usage.OutputTokens, e.Usage.CacheReadTokens, e.Usage.CacheWriteTokens, e.CostUSD)
+}
+
 // FormatEvent renders an event as one plain-text log line.
 func FormatEvent(e Event) string {
 	switch e.Kind {
@@ -127,6 +147,8 @@ func FormatEvent(e Event) string {
 		return fmt.Sprintf("[%s] %s", strings.ToLower(e.Tool), truncate(e.Text))
 	case KindResult:
 		return fmt.Sprintf("[result] cost=$%.4f turns=%d %s", e.CostUSD, e.Turns, truncate(e.Text))
+	case KindUsage:
+		return formatUsageEvent(e)
 	case KindSession:
 		return "[session] " + e.SessionID
 	case KindRateLimit:

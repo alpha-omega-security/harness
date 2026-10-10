@@ -37,3 +37,42 @@ func TestCostFromUsage_gpt56SolAndDaybreakBasePricing(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeModelID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ in, want string }{
+		{"claude-haiku-4-5-20251001", "claude-haiku-4-5"},
+		{"anthropic/claude-haiku-4-5-20251001[1m]", "claude-haiku-4-5"},
+		{"claude-haiku-4-5", "claude-haiku-4-5"},
+		{"claude-sonnet-4-6", "claude-sonnet-4-6"},
+		{"gpt-5.6-terra", "gpt-5.6-terra"},
+		{"claude-x-2025101", "claude-x-2025101"},
+		{"claude-x-2025101a", "claude-x-2025101a"},
+		{"-20251001", "-20251001"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := normalizeModelID(tt.in); got != tt.want {
+			t.Errorf("normalizeModelID(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+	usage := Usage{InputTokens: 1_000_000}
+	if got, want := CostFromUsage("claude-haiku-4-5-20251001", usage), 1.0; got != want {
+		t.Errorf("dated id cost = %v, want %v", got, want)
+	}
+}
+
+func TestOneHourCacheWriteSurcharge(t *testing.T) {
+	t.Parallel()
+
+	// Opus writes at $6.25/M for five minutes and $10/M for one hour.
+	if got, want := oneHourCacheWriteSurcharge("claude-opus-4-8", 1_000_000), 3.75; got != want {
+		t.Errorf("surcharge = %v, want %v", got, want)
+	}
+	for _, model := range []string{"mystery-model", modelGPT54ID} {
+		if got := oneHourCacheWriteSurcharge(model, 1_000_000); got != 0 {
+			t.Errorf("surcharge(%s) = %v, want 0", model, got)
+		}
+	}
+}
