@@ -184,6 +184,39 @@ func TestClaudeUsageEvents(t *testing.T) {
 	}
 }
 
+func TestClaudeUsageEventsWithoutAPIMessageID(t *testing.T) {
+	t.Parallel()
+
+	// Older producers and plugin-rewritten events omit api_message_id, so the
+	// delta must be attributed to the message the last message_start opened.
+	const model = "claude-haiku-4-5-20251001"
+	input := strings.Join([]string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_A","model":"` + model + `","usage":{"input_tokens":10,"output_tokens":3}}}}`,
+		`{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":273}}}`,
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_B","model":"` + model + `","usage":{"input_tokens":20,"output_tokens":1}}}}`,
+		`{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":20,"output_tokens":40}}}`,
+	}, "\n")
+
+	var got []Usage
+	for _, event := range claudeEvents(input) {
+		if event.Kind == KindUsage {
+			if event.Model != model {
+				t.Errorf("usage event model = %q, want %q", event.Model, model)
+			}
+			got = append(got, event.Usage)
+		}
+	}
+	want := []Usage{
+		{InputTokens: 10, OutputTokens: 3},
+		{OutputTokens: 270},
+		{InputTokens: 20, OutputTokens: 1},
+		{OutputTokens: 39},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("usage events = %+v, want %+v", got, want)
+	}
+}
+
 func TestFormatUsageEvent(t *testing.T) {
 	t.Parallel()
 

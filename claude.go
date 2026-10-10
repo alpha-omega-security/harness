@@ -203,6 +203,10 @@ type claudeContent struct {
 type claudeStreamState struct {
 	reported map[string]claudeReported
 	models   map[string]string
+	// current is the main-thread message the latest message_start opened.
+	// Main-thread stream events are sequential and subagents emit none, so a
+	// message_delta without api_message_id belongs to it.
+	current string
 }
 
 // claudeReported is the highest usage already reported for one API message.
@@ -260,13 +264,19 @@ func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(
 	switch message.Event.Type {
 	case "message_start":
 		if m := message.Event.Message; m != nil {
+			state.current = m.ID
 			if m.Model != "" {
 				state.models[m.ID] = m.Model
 			}
 			state.reportUsage(m.ID, state.models[m.ID], m.Usage, emit)
 		}
 	case "message_delta":
+		// api_message_id is internal to the CLI and absent from older
+		// producers and from events a plugin produced or rewrote.
 		id := message.APIMessageID
+		if id == "" {
+			id = state.current
+		}
 		state.reportUsage(id, state.models[id], message.Event.Usage, emit)
 	}
 }
