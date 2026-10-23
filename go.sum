@@ -1,2 +1,4 @@
+github.com/git-pkgs/skills v0.2.0 h1:WcYbOukbrQLhjrg0qocknf16MrLVF5bKdwOeNHF6we0=
+github.com/git-pkgs/skills v0.2.0/go.mod h1:fnhLBuE0+QEhLh6bb3x2IDljwu5lhJlrU+FE2LfHAk4=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
