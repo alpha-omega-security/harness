@@ -161,7 +161,7 @@ import (
 
     "github.com/alpha-omega-security/harness"
     "github.com/alpha-omega-security/harness/egress"
-    "github.com/alpha-omega-security/harness/skills"
+    "github.com/git-pkgs/skills"
 )
 
 func main() {
@@ -223,7 +223,7 @@ job := harness.Job{
     Model:      "gpt-5.3-codex",
     OutputFile: "report.json",
 }
-if err := skills.Stage(h, job, skill); err != nil {
+if _, err := harness.StageSkill(h, job, nil, skill); err != nil {
     return err
 }
 if err := harness.WriteSystemPrompt(h, job); err != nil {
@@ -264,7 +264,7 @@ the allowlist.
 
 ## Packages
 
-`skills` parses `SKILL.md` files following the [Agent Skills specification](https://agentskills.io/specification). YAML frontmatter is optional, so plain markdown instruction files parse too. `Parse` returns a `Skill` with the spec fields (name, description, license, compatibility, allowed-tools, metadata), the body, a sibling `schema.json` when present, and a content hash covering both. `Walk` finds skills under a directory; `Stage` writes one into the selected backend's discovery directory; `Concat` joins bodies for a system prompt; `Render` produces `SKILL.md` bytes from a `Skill` built in memory. `ValidateNamespace` and the `Match`/`PathIncluded` glob helpers support callers that add their own metadata keys and path filters.
+`StageSkill` writes a skill into the directory where the selected backend discovers it, checks the skill name and `OutputFile` stay inside the workspace, and copies `schema.json` and `scripts/` to the workspace root, where skills refer to them. Pass an `fs.FS` such as an `embed.FS` for skills shipped in a binary, or nil for skills parsed from disk or built in memory. Frontmatter keys outside the [Agent Skills specification](https://agentskills.io/specification), such as `model`, are left out of the staged `SKILL.md`. Parsing and the rest of the skill API come from [`github.com/git-pkgs/skills`](https://github.com/git-pkgs/skills).
 
 `container` runs a backend inside an ephemeral OCI container. `Runner.Run`
 mirrors `harness.Run`'s signature; the workspace is bind-mounted at `/work`
