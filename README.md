@@ -76,7 +76,10 @@ for the other CLIs.
 `MaxTurns` uses the backend default when set to zero; Copilot maps it to maximum
 autopilot continuations. `Effort` applies to Claude, Codex, and Copilot.
 `AllowedTools` applies only to Claude. `ResumeSessionID` and `ResumePrompt`
-continue an existing conversation.
+continue an existing conversation. `RunSession` runs a job through `Run` or
+`container.Scope.Run` and returns the session the backend announced, so a
+caller can resume it, for instance to have an invalid `OutputFile` rewritten.
+A resume that cannot load its conversation is run again fresh with `Prompt`.
 
 The `Harness` interface exposes the parts needed by local, container, and remote
 runners:

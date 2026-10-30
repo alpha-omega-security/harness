@@ -315,7 +315,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 	case "result":
 		emit(state.resultEvent(message))
 		if message.Subtype == "error_max_turns" {
-			emit(Event{Kind: KindError, Text: "hit max turns"})
+			emit(Event{Kind: KindError, Text: maxTurnsText})
 		}
 	case wireTypeError:
 		var text string
