@@ -79,6 +79,16 @@ type Provider struct {
 	Unlogged map[string]bool
 	// PrivateWorkspace redacts ChatGPT identity and managed configuration before they reach Codex.
 	PrivateWorkspace bool
+	// ClientPath completes the proxy URL the way the provider's CLI expects its API base URL.
+	ClientPath string
+
+	// codexAccessToken marks the provider Codex reaches when it signs in with an access token.
+	codexAccessToken bool
+}
+
+// BaseURL is the API base URL a CLI is given for p when the proxy is served at origin.
+func (p Provider) BaseURL(origin string) string {
+	return origin + PathPrefix + p.ClientPath
 }
 
 var Anthropic = Provider{
@@ -106,8 +116,9 @@ var OpenAI = Provider{
 			return false
 		}
 	},
-	SetKey:  func(h http.Header, key string) { h.Set("Authorization", "Bearer "+key) },
-	NoStore: true,
+	SetKey:     func(h http.Header, key string) { h.Set("Authorization", "Bearer "+key) },
+	NoStore:    true,
+	ClientPath: "/v1",
 }
 
 // ChatGPT serves Codex signed in with a Codex access token: it checks the token on auth.openai.com, then
@@ -138,6 +149,8 @@ var ChatGPT = Provider{
 	SetKey:           func(h http.Header, key string) { h.Set("Authorization", "Bearer "+key) },
 	StoreOff:         true,
 	PrivateWorkspace: true,
+	ClientPath:       "/backend-api/codex",
+	codexAccessToken: true,
 }
 
 // Options sets what a Proxy charges and logs. The zero value charges nothing, discards logs and lets each

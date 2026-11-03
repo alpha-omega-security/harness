@@ -333,6 +333,12 @@ a caller can charge a shared budget, and `Options.Log` receives refusals
 without conversation text.
 `NewCertificate` returns a throwaway CA and a server certificate for the HTTPS
 listener the `ChatGPT` provider needs.
+`Provider.BaseURL` gives the API base URL a CLI is pointed at for a proxy served
+at an origin. `CodexConfig` returns the `config.toml` that sends Codex's model
+calls to the proxy through an `OpenAI` or `ChatGPT` provider, with web search,
+retries, WebSockets and the ChatGPT features the proxy refuses turned off, plus
+the environment Codex needs to sign in through the proxy and trust its CA with
+`ChatGPT`.
 
 ## License
 
