@@ -333,6 +333,12 @@ a caller can charge a shared budget, and `Options.Log` receives refusals
 without conversation text.
 `NewCertificate` returns a throwaway CA and a server certificate for the HTTPS
 listener the `ChatGPT` provider needs.
+`Serve` serves a proxy on a free port for the containers of the host, over
+HTTPS under such a certificate when asked, and returns the origin they reach it
+at, the CA they trust, and the `APIPort` or `HostPorts` the egress sidecar
+needs: the egress proxy refuses CONNECT to its API port, so an HTTPS proxy is a
+separate host port. The origin names `egress.HostGatewayAlias`, which Docker and
+Podman resolve and Apple's container runtime does not.
 `Provider.BaseURL` gives the API base URL a CLI is pointed at for a proxy served
 at an origin. `CodexConfig` returns the `config.toml` that sends Codex's model
 calls to the proxy through an `OpenAI` or `ChatGPT` provider, with web search,
