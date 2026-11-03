@@ -150,3 +150,69 @@ func TestCodexTodoListItemsAreDropped(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexFailureEvents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		line string
+		want Event
+	}{
+		{
+			name: "turn failed",
+			line: `{"type":"turn.failed","error":{"message":"Quota exceeded. Check your plan and billing details."}}`,
+			want: Event{Kind: KindError, Text: "Quota exceeded. Check your plan and billing details."},
+		},
+		{
+			name: "top-level error",
+			line: `{"type":"error","message":"Reconnecting... 2/5 (stream disconnected before completion)"}`,
+			want: Event{Kind: KindError, Text: "Reconnecting... 2/5 (stream disconnected before completion)"},
+		},
+		{
+			name: "string error",
+			line: `{"error":"insufficient_quota"}`,
+			want: Event{Kind: KindError, Text: "insufficient_quota"},
+		},
+		{
+			name: "error without message",
+			line: `{"type":"error"}`,
+			want: Event{Kind: KindText, Text: `{"type":"error"}`},
+		},
+		{
+			name: "malformed error",
+			line: `{"type":"turn.failed","error":42}`,
+			want: Event{Kind: KindText, Text: `{"type":"turn.failed","error":42}`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var events []Event
+			CodexHarness{}.ParseStream(strings.NewReader(tt.line), func(event Event) {
+				events = append(events, event)
+			})
+			if len(events) != 1 || events[0] != tt.want {
+				t.Fatalf("events = %+v, want %+v", events, tt.want)
+			}
+		})
+	}
+}
+
+func TestCodexTurnFailedIsAnAccountError(t *testing.T) {
+	t.Parallel()
+
+	var text string
+	CodexHarness{}.ParseStream(strings.NewReader(`{"type":"turn.failed","error":{"message":"Quota exceeded. Check your plan and billing details."}}`), func(event Event) {
+		if event.Kind == KindError {
+			text = event.Text
+		}
+	})
+	if (CodexHarness{}).AccountErrorText(text) == "" {
+		t.Fatalf("AccountErrorText(%q) is empty", text)
+	}
+	if detail := (CodexHarness{}).AccountErrorText("Reconnecting... 2/5 (stream disconnected before completion)"); detail != "" {
+		t.Fatalf("a stream retry is an account error: %q", detail)
+	}
+}

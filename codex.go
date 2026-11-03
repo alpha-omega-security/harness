@@ -88,9 +88,28 @@ type codexLine struct {
 	Tool      string          `json:"tool"`
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
-	Error     string          `json:"error"`
+	Error     codexError      `json:"error"`
 	Item      *codexItem      `json:"item"`
 	Usage     *codexUsage     `json:"usage"`
+}
+
+// codexError is a string, or on turn.failed an object carrying the message.
+type codexError string
+
+func (e *codexError) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		*e = codexError(s)
+		return nil
+	}
+	var o struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(b, &o); err != nil {
+		return err
+	}
+	*e = codexError(o.Message)
+	return nil
 }
 
 type codexItem struct {
@@ -177,7 +196,11 @@ func parseCodexLine(raw []byte, emit func(Event)) {
 		}
 		emit(Event{Kind: KindTool, Tool: name, Text: summariseInput(name, event.Input)})
 	case event.Error != "":
-		emit(Event{Kind: KindError, Text: event.Error})
+		emit(Event{Kind: KindError, Text: string(event.Error)})
+	case event.Type == wireTypeError && event.Message != "":
+		// Codex reports stream retries and the failure that ends the turn
+		// as top-level error events.
+		emit(Event{Kind: KindError, Text: event.Message})
 	case event.Text != "":
 		emit(Event{Kind: KindText, Text: event.Text})
 	case event.Message != "":
