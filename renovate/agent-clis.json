@@ -1,0 +1,80 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Update the agent CLI release assets a Dockerfile pins as ARG <CLI>_<AMD64|ARM64>_LOCK=<tag>@sha256:<digest>, and group the assets of each CLI into one update",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update Claude Code release assets and their SHA-256 pins",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG CLAUDE_(?:AMD64|ARM64)_LOCK=(?<currentValue>v\\d+\\.\\d+\\.\\d+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "packageNameTemplate": "anthropics/claude-code",
+      "depNameTemplate": "anthropics/claude-code",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Codex CLI package assets and their SHA-256 pins",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG CODEX_(?:AMD64|ARM64)_LOCK=(?<currentValue>rust-v\\d+\\.\\d+\\.\\d+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "packageNameTemplate": "openai/codex",
+      "depNameTemplate": "openai/codex",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "regex:^rust-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:-(?<prerelease>.+))?$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update OpenCode CLI release assets and their SHA-256 pins",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG OPENCODE_(?:AMD64|ARM64)_LOCK=(?<currentValue>v\\d+\\.\\d+\\.\\d+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "packageNameTemplate": "anomalyco/opencode",
+      "depNameTemplate": "anomalyco/opencode",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update GitHub Copilot CLI release assets and their SHA-256 pins",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG COPILOT_(?:AMD64|ARM64)_LOCK=(?<currentValue>v\\d+\\.\\d+\\.\\d+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "packageNameTemplate": "github/copilot-cli",
+      "depNameTemplate": "github/copilot-cli",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "semver-coerced"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group the Claude Code assets into one update, held back until it moves at least two pins",
+      "matchPackageNames": ["anthropics/claude-code"],
+      "groupName": "Claude Code",
+      "minimumGroupSize": 2
+    },
+    {
+      "description": "Group the Codex CLI assets into one update, held back until it moves at least two pins",
+      "matchPackageNames": ["openai/codex"],
+      "groupName": "Codex CLI",
+      "minimumGroupSize": 2
+    },
+    {
+      "description": "Group the OpenCode CLI assets into one update, held back until it moves at least two pins",
+      "matchPackageNames": ["anomalyco/opencode"],
+      "groupName": "OpenCode CLI",
+      "minimumGroupSize": 2
+    },
+    {
+      "description": "Group the GitHub Copilot CLI assets into one update, held back until it moves at least two pins",
+      "matchPackageNames": ["github/copilot-cli"],
+      "groupName": "GitHub Copilot CLI",
+      "minimumGroupSize": 2
+    }
+  ]
+}
