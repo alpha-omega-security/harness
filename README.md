@@ -80,6 +80,13 @@ continue an existing conversation. `RunSession` runs a job through `Run` or
 `container.Scope.Run` and returns the session the backend announced, so a
 caller can resume it, for instance to have an invalid `OutputFile` rewritten.
 A resume that cannot load its conversation is run again fresh with `Prompt`.
+`RunRepaired` builds on it for a JSON `OutputFile`: it reads the file as a
+regular file of at most `Repair.MaxBytes`, validates it against `Repair.Schema`
+and `Repair.Validate`, and on a failure resumes the session once with the
+validation errors and the invalid output, capped at `Repair.MaxTurns` on
+Claude and Copilot. It returns the valid output, or a `*ValidationError` that
+keeps the original. A file already at `OutputFile` before the run reads as its
+output, so the workspace starts without one.
 
 The `Harness` interface exposes the parts needed by local, container, and remote
 runners:
