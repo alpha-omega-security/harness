@@ -15,7 +15,7 @@ func CodexConfig(p Provider, origin, caFile string) ([]byte, []string, error) {
 		return nil, nil, errors.New("modelproxy: Codex only reaches the OpenAI and ChatGPT providers")
 	}
 	for _, value := range []string{origin, caFile} {
-		if strings.ContainsAny(value, "\"\\\x00\n\r") {
+		if strings.ContainsFunc(value, func(r rune) bool { return r == '"' || r == '\\' || r < 0x20 || r == 0x7f }) {
 			return nil, nil, fmt.Errorf("modelproxy: %q cannot go in config.toml", value)
 		}
 	}

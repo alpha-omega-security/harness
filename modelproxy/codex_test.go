@@ -70,6 +70,7 @@ func TestCodexConfigRefuses(t *testing.T) {
 		"access token HTTP":  {ChatGPT, "http://proxy:1", "/ca.pem"},
 		"quoted origin":      {OpenAI, `http://proxy:1"` + "\nmodel_provider = \"openai", ""},
 		"quoted CA":          {ChatGPT, "https://proxy:1", `/ca"`},
+		"control character":  {OpenAI, "http://proxy:1\x01", ""},
 	} {
 		if config, _, err := CodexConfig(tc.p, tc.origin, tc.caFile); err == nil {
 			t.Errorf("%s: config accepted:\n%s", name, config)
