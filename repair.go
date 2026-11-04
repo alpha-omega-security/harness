@@ -140,13 +140,19 @@ func (r Repair) read(j Job) ([]byte, string) {
 	if !entry.Mode().IsRegular() {
 		return nil, "the file is not a regular file"
 	}
-	f, err := root.Open(j.OutputFile)
+	f, err := openRepairOutput(root, j.OutputFile)
 	if err != nil {
 		return nil, "the file cannot be opened"
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
-	if err != nil || !os.SameFile(entry, info) {
+	if err != nil {
+		return nil, "the file cannot be read"
+	}
+	if !info.Mode().IsRegular() {
+		return nil, "the file is not a regular file"
+	}
+	if !os.SameFile(entry, info) {
 		return nil, "the file changed while it was read"
 	}
 	output, err := io.ReadAll(io.LimitReader(f, limit+1))
