@@ -334,6 +334,12 @@ without conversation text.
 `NewCertificate` returns a throwaway CA and a server certificate for the HTTPS
 listener the `ChatGPT` provider needs.
 
+`modelproxy/modelproxytest` writes the replies a fake upstream needs to drive a
+real CLI through the proxy in a test: `AnthropicText` and `AnthropicToolUse`
+stream a Messages API turn, `ResponsesFunctionCall` streams a Responses API
+function call, and `CodexStartup` answers the ChatGPT routes Codex calls before
+its first model request when it signs in with an access token.
+
 ## License
 
 MIT
