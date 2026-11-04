@@ -1,6 +1,6 @@
 module github.com/alpha-omega-security/harness
 
-go 1.26
+go 1.26.0
 
 toolchain go1.27.3
 
@@ -11,5 +11,5 @@ require (
 
 require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
