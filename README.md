@@ -340,6 +340,20 @@ stream a Messages API turn, `ResponsesFunctionCall` streams a Responses API
 function call, and `CodexStartup` answers the ChatGPT routes Codex calls before
 its first model request when it signs in with an access token.
 
+## Renovate preset
+
+`renovate/agent-clis.json` updates the agent CLI releases a Dockerfile pins as
+`ARG <CLI>_<AMD64|ARM64>_LOCK=<tag>@sha256:<digest>`, for `CLAUDE`, `CODEX`,
+`OPENCODE` and `COPILOT`, and groups both architectures of a CLI into one
+update. Extend it at a harness tag so a change to the preset is reviewed like
+any other dependency update:
+
+```json
+{
+  "extends": ["github>alpha-omega-security/harness//renovate/agent-clis#<tag>"]
+}
+```
+
 ## License
 
 MIT
