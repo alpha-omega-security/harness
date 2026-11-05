@@ -58,6 +58,7 @@ func TestCodexArgsConfigOverrides(t *testing.T) {
 				"-c", "analytics.enabled=false",
 				"-c", "features.apps=false",
 				"-c", "features.plugins=false",
+				"-c", "allow_login_shell=false",
 				"exec",
 			},
 			absent: "model_reasoning_effort=",
