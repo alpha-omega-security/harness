@@ -29,6 +29,10 @@ Codex runs with analytics, apps, plugins, and login shells turned off through
 `bash -lc`, and a Debian login shell resets `PATH`, dropping directories an
 image adds with `ENV PATH`.
 
+OpenCode runs with `--standalone`, so each run starts its own server. Without
+it OpenCode 2 hands the session to a background service that outlives the run
+and keeps its logs to itself, so `OPENCODE_PRINT_LOGS` has nothing to mirror.
+
 The library owns the details that differ between CLIs: binary names, arguments,
 credential and state environment variables, project instruction files, skill
 directories, model API hosts, JSONL parsing, account-limit errors, default
