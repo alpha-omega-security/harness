@@ -25,9 +25,7 @@ func (CodexHarness) Args(j Job) []string {
 		"-c", "analytics.enabled=false",
 		"-c", "features.apps=false",
 		"-c", "features.plugins=false",
-		// Codex otherwise runs commands as `bash -lc`. A login shell sources
-		// /etc/profile, which on Debian assigns PATH from scratch and drops
-		// directories an image adds with ENV PATH (node, go, cargo, ...).
+		// bash -lc sources /etc/profile, which resets PATH on Debian.
 		"-c", "allow_login_shell=false",
 	}
 	if j.BaseURL != "" {
