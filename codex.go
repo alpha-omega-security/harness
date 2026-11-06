@@ -25,6 +25,8 @@ func (CodexHarness) Args(j Job) []string {
 		"-c", "analytics.enabled=false",
 		"-c", "features.apps=false",
 		"-c", "features.plugins=false",
+		// bash -lc sources /etc/profile, which resets PATH on Debian.
+		"-c", "allow_login_shell=false",
 	}
 	if j.BaseURL != "" {
 		args = append(args, "-c", "openai_base_url="+codexConfigValue(j.BaseURL))

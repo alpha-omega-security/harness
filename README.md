@@ -23,8 +23,11 @@ For Copilot BYOK runs, `Job.BaseURL` sets `COPILOT_PROVIDER_BASE_URL` and
 `COPILOT_PROVIDER_*` credentials and wire settings as bare keys, so container
 and remote runners can inject their values without placing secrets in argv.
 
-Codex runs with analytics, apps, and plugins turned off through `-c` overrides,
-which take precedence over the same keys in the caller's `config.toml`.
+Codex runs with analytics, apps, plugins, and login shells turned off through
+`-c` overrides, which take precedence over the same keys in the caller's
+`config.toml`. Without `allow_login_shell=false`, Codex runs each command as
+`bash -lc`, and a Debian login shell resets `PATH`, dropping directories an
+image adds with `ENV PATH`.
 
 The library owns the details that differ between CLIs: binary names, arguments,
 credential and state environment variables, project instruction files, skill
