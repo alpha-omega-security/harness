@@ -17,6 +17,16 @@ func TestOpencodeEnvMirrorsServerLogsToStderr(t *testing.T) {
 	}
 }
 
+func TestOpencodeArgsRunStandalone(t *testing.T) {
+	t.Parallel()
+
+	args := OpencodeHarness{}.Args(Job{Prompt: "p"})
+	sep := slices.Index(args, "--")
+	if i := slices.Index(args, "--standalone"); i < 0 || i > sep {
+		t.Errorf("Args() = %v, want --standalone before the prompt", args)
+	}
+}
+
 func TestOpencodeStream(t *testing.T) {
 	t.Parallel()
 
