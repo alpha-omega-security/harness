@@ -18,9 +18,7 @@ func (OpencodeHarness) Binary() string { return "opencode" }
 // Args builds opencode run argv. OpenCode discovers SKILL.md but does not
 // invoke a named skill itself, so Prompt points at the staged file. --auto
 // suppresses interactive permission prompts and --format json selects JSONL.
-// --standalone gives the run a private server: without it OpenCode 2 sends
-// the session to a background service, whose logs never reach stderr (so
-// OPENCODE_PRINT_LOGS has nothing to mirror) and which outlives the run.
+// --standalone keeps server logs on stderr and ties the server to this run.
 // The caller remains responsible for process isolation.
 func (OpencodeHarness) Args(j Job) []string {
 	args := []string{
