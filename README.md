@@ -128,6 +128,7 @@ Each parser produces the same event type:
 ```go
 type Event struct {
     Kind      string
+    Agent     string
     Tool      string
     Text      string
     CostUSD        float64
@@ -141,7 +142,16 @@ type Event struct {
 ```
 
 Kinds are `thinking`, `text`, `tool`, `result`, `usage`, `error`, `session`,
-`rate_limit` and `egress`. `FormatEvent` renders an event for a plain-text log.
+`rate_limit`, `egress` and `subagent`. `FormatEvent` renders an event for a
+plain-text log.
+
+Claude prints the tool calls of its subagents, tagged with the Agent call that
+started them, and reports each subagent's start and end as `task_started` and
+`task_notification` system lines. The Claude parser sets `Agent` to the
+subagent's task description on every event that subagent produced, emits a
+`subagent` event when it starts and ends, and `FormatEvent` prefixes those lines
+with `[agent:<description>]`. The other backends never set `Agent`, and the
+Codex and OpenCode CLIs print nothing from their subagents' sessions.
 `CostFromUsage` calculates a list-price estimate when the CLI reports tokens
 without a dollar amount. Copilot's `CostUSD` uses the latest cumulative
 `session.usage_checkpoint` when one is present, so on a resumed Copilot session
