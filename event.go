@@ -16,6 +16,9 @@ const (
 	KindSession   = "session"
 	KindRateLimit = "rate_limit"
 	KindEgress    = "egress"
+	// KindSubagent marks a subagent starting or ending. Agent names it and
+	// Text is "started" or how it ended.
+	KindSubagent = "subagent"
 
 	// KindUsage reports the tokens a model call added since the previous
 	// usage event for the same call. Its CostUSD is a list-price estimate for
@@ -52,8 +55,12 @@ const (
 // the SessionCostUSD it recorded for that invocation. A resumed result without
 // SessionCostUSD (Copilot with no checkpoint) carries a per-invocation estimate
 // and is used unchanged.
+//
+// Agent is set on the events a subagent produced, to its task description, and
+// is empty for the main conversation. Only the Claude backend sets it.
 type Event struct {
 	Kind           string
+	Agent          string
 	Tool           string
 	Text           string
 	CostUSD        float64
@@ -150,6 +157,13 @@ func formatUsageEvent(e Event) string {
 
 // FormatEvent renders an event as one plain-text log line.
 func FormatEvent(e Event) string {
+	if e.Agent == "" {
+		return formatEventBody(e)
+	}
+	return "[agent:" + e.Agent + "] " + formatEventBody(e)
+}
+
+func formatEventBody(e Event) string {
 	switch e.Kind {
 	case KindThinking:
 		return "[thinking] " + truncate(e.Text)
@@ -172,6 +186,8 @@ func FormatEvent(e Event) string {
 		return line
 	case KindEgress:
 		return "[egress] " + e.Text
+	case KindSubagent:
+		return e.Text
 	case KindError:
 		return "[error] " + e.Text
 	default:
