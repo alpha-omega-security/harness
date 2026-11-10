@@ -175,7 +175,7 @@ func safeBlock(t map[string]any, anthropic bool) bool {
 	case "thinking", "redacted_thinking":
 		return fields(t, "type", "thinking", "signature", "data")
 	case "tool_use":
-		return fields(t, "type", "id", "name", "input", "cache_control")
+		return fields(t, "type", "id", "name", "input", "cache_control", "caller") && directCaller(t["caller"])
 	case "tool_result":
 		return fields(t, "type", "tool_use_id", "content", "is_error", "cache_control") && safeContent(t["content"], true)
 	case "tool_reference":
@@ -183,6 +183,16 @@ func safeBlock(t map[string]any, anthropic bool) bool {
 	default:
 		return false
 	}
+}
+
+// directCaller accepts the caller of a tool_use block the model emitted itself. Every other caller is hosted
+// code execution calling the tool.
+func directCaller(v any) bool {
+	if v == nil {
+		return true
+	}
+	c, ok := v.(map[string]any)
+	return ok && fields(c, "type") && c["type"] == "direct"
 }
 
 func safeContextEdits(v any) bool {
