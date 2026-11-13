@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.27.3
 
 require (
-	github.com/git-pkgs/skills v0.2.0
+	github.com/git-pkgs/skills v0.2.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 )
 
