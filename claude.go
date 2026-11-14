@@ -154,6 +154,20 @@ type claudeLine struct {
 	RateLimitInfo *RateLimitInfo     `json:"rate_limit_info"`
 	Event         *claudeStreamEvent `json:"event"`
 	APIMessageID  string             `json:"api_message_id"`
+	// ParentToolUseID is the tool call that started the subagent this line
+	// comes from, and null on the main conversation.
+	ParentToolUseID string `json:"parent_tool_use_id"`
+}
+
+// claudeTask is the payload of the task_started and task_notification system
+// lines. It is decoded on its own so an unexpected field type on any other
+// line cannot make the whole line fail to parse.
+type claudeTask struct {
+	ToolUseID      string `json:"tool_use_id"`
+	Description    string `json:"description"`
+	TaskType       string `json:"task_type"`
+	IsBackgrounded *bool  `json:"is_backgrounded"`
+	Status         string `json:"status"`
 }
 
 // claudeStreamEvent is the inner event of a stream_event line, emitted with
@@ -189,11 +203,13 @@ type claudeMessage struct {
 }
 
 type claudeContent struct {
-	Type     string          `json:"type"`
-	Thinking string          `json:"thinking"`
-	Text     string          `json:"text"`
-	Name     string          `json:"name"`
-	Input    json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Thinking  string          `json:"thinking"`
+	Text      string          `json:"text"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	IsError   bool            `json:"is_error"`
 }
 
 // claudeStreamState tracks the highest usage already reported per API message.
@@ -209,6 +225,18 @@ type claudeStreamState struct {
 	current string
 	// sessionCostUSD is the latest cumulative total_cost_usd in the stream.
 	sessionCostUSD float64
+	// agents holds the subagents task_started announced, keyed by the Agent
+	// tool call that started them.
+	agents map[string]*claudeAgent
+}
+
+type claudeAgent struct {
+	description string
+	// foreground is set only when task_started says the subagent is not
+	// backgrounded. A background subagent's tool_result arrives as soon as it
+	// is launched, so only its task_notification marks the end.
+	foreground bool
+	ended      bool
 }
 
 // claudeReported is the highest usage already reported for one API message.
@@ -218,7 +246,73 @@ type claudeReported struct {
 }
 
 func newClaudeStreamState() *claudeStreamState {
-	return &claudeStreamState{reported: map[string]claudeReported{}, models: map[string]string{}}
+	return &claudeStreamState{
+		reported: map[string]claudeReported{},
+		models:   map[string]string{},
+		agents:   map[string]*claudeAgent{},
+	}
+}
+
+// agentLabel names the subagent a line belongs to. A subagent whose
+// task_started has not been seen keeps its tool call id, so its events still
+// stand apart from the main conversation.
+func (state *claudeStreamState) agentLabel(parentToolUseID string) string {
+	if agent := state.agents[parentToolUseID]; agent != nil {
+		return agent.description
+	}
+	return parentToolUseID
+}
+
+func (state *claudeStreamState) handleTask(raw []byte, subtype string, emit func(Event)) {
+	var task claudeTask
+	if json.Unmarshal(raw, &task) != nil || task.ToolUseID == "" {
+		return
+	}
+	if subtype == "task_notification" {
+		state.endAgent(task.ToolUseID, task.Status, emit)
+		return
+	}
+	// Background Bash commands and Monitor watches report tasks too.
+	if task.TaskType != "local_agent" {
+		return
+	}
+	description := task.Description
+	if description == "" {
+		description = task.ToolUseID
+	}
+	state.agents[task.ToolUseID] = &claudeAgent{
+		description: description,
+		foreground:  task.IsBackgrounded != nil && !*task.IsBackgrounded,
+	}
+	emit(Event{Kind: KindSubagent, Agent: description, Text: "started"})
+}
+
+// endForegroundAgents ends each foreground subagent whose Agent call returns
+// in a user line.
+func (state *claudeStreamState) endForegroundAgents(message *claudeMessage, emit func(Event)) {
+	if message == nil {
+		return
+	}
+	for _, block := range message.Content {
+		agent := state.agents[block.ToolUseID]
+		if block.Type != "tool_result" || agent == nil || !agent.foreground {
+			continue
+		}
+		status := "completed"
+		if block.IsError {
+			status = "failed"
+		}
+		state.endAgent(block.ToolUseID, status, emit)
+	}
+}
+
+func (state *claudeStreamState) endAgent(toolUseID, status string, emit func(Event)) {
+	agent := state.agents[toolUseID]
+	if agent == nil || agent.ended {
+		return
+	}
+	agent.ended = true
+	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: status})
 }
 
 // reportUsage emits a usage event for the growth of id's usage over what was
@@ -300,11 +394,16 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		// loaded the saved conversation. A failed resume emits no init, then
 		// reports a new throwaway session id in its result, which must not be
 		// treated as a successful resume.
-		if message.Subtype == "init" && message.SessionID != "" {
-			emit(Event{Kind: KindSession, SessionID: message.SessionID})
+		switch message.Subtype {
+		case "init":
+			if message.SessionID != "" {
+				emit(Event{Kind: KindSession, SessionID: message.SessionID})
+			}
+		case "task_started", "task_notification":
+			state.handleTask(raw, message.Subtype, emit)
 		}
 	case "assistant":
-		emitClaudeAssistant(message.Message, emit)
+		emitClaudeAssistant(message.Message, state.agentLabel(message.ParentToolUseID), emit)
 		// Subagent calls emit no stream_event lines, so they only reach here
 		// and their output tokens are a lower bound until the result event.
 		if m := message.Message; m != nil {
@@ -329,13 +428,15 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		}
 	case "user":
 		// Tool results echo file contents and command output. The matching
-		// tool-use event already carries a concise description.
+		// tool-use event already carries a concise description, so a user line
+		// only matters when it ends a subagent.
+		state.endForegroundAgents(message.Message, emit)
 	default:
 		emit(Event{Kind: KindText, Text: line})
 	}
 }
 
-func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
+func emitClaudeAssistant(message *claudeMessage, agent string, emit func(Event)) {
 	if message == nil {
 		return
 	}
@@ -343,14 +444,14 @@ func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
 		switch block.Type {
 		case "thinking":
 			if block.Thinking != "" {
-				emit(Event{Kind: KindThinking, Text: block.Thinking})
+				emit(Event{Kind: KindThinking, Agent: agent, Text: block.Thinking})
 			}
 		case wireTypeText:
 			if block.Text != "" {
-				emit(Event{Kind: KindText, Text: block.Text})
+				emit(Event{Kind: KindText, Agent: agent, Text: block.Text})
 			}
 		case "tool_use":
-			emit(Event{Kind: KindTool, Tool: block.Name, Text: summariseInput(block.Name, block.Input)})
+			emit(Event{Kind: KindTool, Agent: agent, Tool: block.Name, Text: summariseInput(block.Name, block.Input)})
 		}
 	}
 }

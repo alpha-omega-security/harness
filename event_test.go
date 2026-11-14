@@ -307,3 +307,92 @@ func TestClaudeResultWithoutCostLeavesSessionCostUnset(t *testing.T) {
 		t.Errorf("events = %+v", events)
 	}
 }
+
+func claudeLogLines(input string) []string {
+	var lines []string
+	for _, event := range claudeEvents(input) {
+		lines = append(lines, FormatEvent(event))
+	}
+	return lines
+}
+
+// A foreground subagent ends on its Agent tool_result, a background one on its
+// task_notification, and every line a subagent produced carries its
+// description.
+func TestClaudeStreamLabelsSubagentActivity(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_fg","name":"Agent","input":{"description":"Audit batch A"}}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_fg","description":"Audit batch A","task_type":"local_agent","is_backgrounded":false}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"tool_use","id":"toolu_ls","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"user","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_ls","content":"a.txt"}]}}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"text","text":"one file"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_fg","content":"one file"}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"a2","tool_use_id":"toolu_bg","description":"Audit batch B","task_type":"local_agent","is_backgrounded":true}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_bg","content":"launched"}]}}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_bg","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/work/a.txt"}}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a2","tool_use_id":"toolu_bg","status":"failed","summary":"x"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a2","tool_use_id":"toolu_bg","status":"completed","summary":"x"}`,
+		`{"type":"result","result":"ok","total_cost_usd":0.1,"num_turns":3}`,
+	}, "\n")
+
+	want := []string{
+		`[agent] {"description":"Audit batch A"}`,
+		"[agent:Audit batch A] started",
+		"[agent:Audit batch A] [bash] ls",
+		"[agent:Audit batch A] one file",
+		"[agent:Audit batch A] completed",
+		"[agent:Audit batch B] started",
+		"[agent:Audit batch B] [read] /work/a.txt",
+		"[agent:Audit batch B] failed",
+		"[result] cost=$0.1000 turns=3 ok",
+	}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestClaudeStreamWithoutSubagentsIsUnlabelled(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"sleep 60"}}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"b1","tool_use_id":"toolu_1","description":"sleep 60","task_type":"local_bash","is_backgrounded":true}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"started"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"b1","tool_use_id":"toolu_1","status":"completed","summary":"done"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}`,
+	}, "\n")
+
+	events := claudeEvents(input)
+	for _, event := range events {
+		if event.Agent != "" || event.Kind == KindSubagent {
+			t.Errorf("main-thread event labelled as a subagent: %+v", event)
+		}
+	}
+	want := []string{"[bash] sleep 60", "done"}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines = %q, want %q", got, want)
+	}
+}
+
+// Without task_started, or with a background flag the CLI did not report, a
+// subagent's lines fall back to its tool call id and a tool_result ends
+// nothing, since it may only mean the subagent was launched.
+func TestClaudeStreamSubagentWithoutTaskStarted(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"assistant","parent_tool_use_id":"toolu_x","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"TODO"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_x","content":"done"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"c0","tool_use_id":"toolu_x","status":"completed"}`,
+		`{"type":"system","subtype":"task_started","task_id":"c1","tool_use_id":"toolu_y","task_type":"local_agent"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_y","content":"launched"}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"c2","task_type":"local_agent","description":"no tool call"}`,
+	}, "\n")
+
+	want := []string{"[agent:toolu_x] [grep] TODO", "[agent:toolu_y] started"}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines = %q, want %q", got, want)
+	}
+}
