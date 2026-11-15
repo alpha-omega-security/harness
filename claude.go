@@ -134,10 +134,14 @@ func (ClaudeHarness) DefaultModels() []ModelDefault {
 		{Name: "Opus 4.7", ID: "claude-opus-4-7"},
 		{Name: "Opus 4.8", ID: "claude-opus-4-8"},
 		{Name: "Opus 5.0", ID: modelClaudeOpus5ID, Tier: modelTierMax},
+		{Name: "Opus 5.5", ID: "claude-opus-5-5"},
 		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6", Tier: modelTierMid},
 		{Name: "Sonnet 5.0", ID: modelClaudeSonnet5ID},
+		{Name: "Sonnet 5.5", ID: "claude-sonnet-5-5"},
+		{Name: "Haiku 5.5", ID: "claude-haiku-5-5"},
 		{Name: "Fable 5", ID: "claude-fable-5[1m]"},
 		{Name: "Fable 5.1", ID: "claude-fable-5-1[1m]"},
+		{Name: "Fable 5.2", ID: "claude-fable-5-2[1m]"},
 	}
 }
 
@@ -236,7 +240,7 @@ func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage
 		CacheWriteTokens: max(usage.CacheWriteTokens-prev.usage.CacheWriteTokens, 0),
 	}
 	oneHourWrites := max(usage.oneHourWrites()-prev.oneHourWrites, 0)
-	state.reported[id] = claudeReported{
+	reported := claudeReported{
 		usage: Usage{
 			InputTokens:      max(usage.InputTokens, prev.usage.InputTokens),
 			OutputTokens:     max(usage.OutputTokens, prev.usage.OutputTokens),
@@ -245,6 +249,7 @@ func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage
 		},
 		oneHourWrites: max(usage.oneHourWrites(), prev.oneHourWrites),
 	}
+	state.reported[id] = reported
 	if delta == (Usage{}) {
 		return
 	}
@@ -253,7 +258,10 @@ func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage
 	// a copy so the emitted Usage keeps the convention of the result event.
 	priced := delta
 	priced.InputTokens += delta.CacheReadTokens + delta.CacheWriteTokens
-	cost := CostFromUsage(model, priced) + oneHourCacheWriteSurcharge(model, oneHourWrites)
+	// The delta may hold only output growth, so the rate tier comes from the
+	// message's whole prompt.
+	prompt := reported.usage.InputTokens + reported.usage.CacheReadTokens + reported.usage.CacheWriteTokens
+	cost := requestCost(model, priced, prompt) + oneHourCacheWriteSurcharge(model, oneHourWrites, prompt)
 	emit(Event{Kind: KindUsage, Model: model, Usage: delta, CostUSD: cost})
 }
 

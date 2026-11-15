@@ -326,7 +326,7 @@ func (state *copilotStreamState) addUsage(data copilotUsageData) Event {
 		CacheReadTokens:  data.CacheReadTokens,
 		CacheWriteTokens: data.CacheWriteTokens,
 	}
-	cost := CostFromUsage(data.Model, usage)
+	cost := requestCost(data.Model, usage, usage.InputTokens)
 	state.estimatedCostUSD += cost
 	state.result.Usage.InputTokens += usage.InputTokens
 	state.result.Usage.OutputTokens += usage.OutputTokens

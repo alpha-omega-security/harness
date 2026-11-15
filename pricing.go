@@ -4,8 +4,22 @@ import "strings"
 
 // modelPrice is the USD list price per million tokens. In is uncached input,
 // Out is output, CachedIn is cache reads, and CacheWrite is cache creation.
+//
+// LongPrompt, when set, replaces the base rates for a request whose prompt has
+// more than LongPromptOver tokens.
 type modelPrice struct {
 	In, Out, CachedIn, CacheWrite float64
+
+	LongPromptOver int
+	LongPrompt     *modelPrice
+}
+
+// forPrompt returns the rates for one request with the given prompt size.
+func (p modelPrice) forPrompt(tokens int) modelPrice {
+	if p.LongPrompt != nil && tokens > p.LongPromptOver {
+		return *p.LongPrompt
+	}
+	return p
 }
 
 // modelPricing lets callers calculate cost when a backend reports tokens but
@@ -19,23 +33,30 @@ type modelPrice struct {
 //nolint:mnd // pricing is data, and named constants would obscure the table
 var modelPricing = map[string]modelPrice{
 	// Anthropic
-	"claude-opus-4-6":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
-	"claude-opus-4-7":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
-	"claude-opus-4-8":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
-	modelClaudeOpus5ID:  {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
-	"claude-sonnet-4-6": {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
-	// Sonnet 5 has an introductory $2/$10 rate through 2026-08-31.
-	modelClaudeSonnet5ID: {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
+	"claude-opus-4-6":    {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	"claude-opus-4-7":    {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	"claude-opus-4-8":    {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	modelClaudeOpus5ID:   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	"claude-opus-5-5":    {In: 4.00, Out: 20.00, CachedIn: 0.20, CacheWrite: 5.00},
+	"claude-sonnet-4-6":  {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
+	modelClaudeSonnet5ID: {In: 2.00, Out: 10.00, CachedIn: 0.20, CacheWrite: 2.50},
+	"claude-sonnet-5-5":  {In: 2.00, Out: 10.00, CachedIn: 0.10, CacheWrite: 2.50},
 	"claude-haiku-4-5":   {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
+	"claude-haiku-5-5":   claudeHaiku55Price,
 	"claude-fable-5":     {In: 10.00, Out: 50.00, CachedIn: 1.00, CacheWrite: 12.50},
 	"claude-fable-5-1":   {In: 10.00, Out: 50.00, CachedIn: 0.25, CacheWrite: 12.50},
+	"claude-fable-5-2":   {In: 8.00, Out: 40.00, CachedIn: 0.20, CacheWrite: 10.00},
 
 	// Copilot uses dotted Anthropic version ids.
 	"claude-opus-4.6":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
 	"claude-opus-4.7":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
 	"claude-opus-4.8":   {In: 5.00, Out: 25.00, CachedIn: 0.50, CacheWrite: 6.25},
+	"claude-opus-5.5":   {In: 4.00, Out: 20.00, CachedIn: 0.20, CacheWrite: 5.00},
 	"claude-sonnet-4.6": {In: 3.00, Out: 15.00, CachedIn: 0.30, CacheWrite: 3.75},
+	"claude-sonnet-5.5": {In: 2.00, Out: 10.00, CachedIn: 0.10, CacheWrite: 2.50},
 	"claude-haiku-4.5":  {In: 1.00, Out: 5.00, CachedIn: 0.10, CacheWrite: 1.25},
+	"claude-haiku-5.5":  claudeHaiku55Price,
+	"claude-fable-5.2":  {In: 8.00, Out: 40.00, CachedIn: 0.20, CacheWrite: 10.00},
 
 	// OpenAI
 	// Sol's promotional standard rates apply at least through 2026-11-21; recheck then.
@@ -61,6 +82,15 @@ var modelPricing = map[string]modelPrice{
 	"grok-4.6":                {In: 2.00, Out: 6.00, CachedIn: 0.50},
 }
 
+// claudeHaiku55Price is five times dearer for prompts over 100,000 tokens.
+//
+//nolint:mnd // pricing is data
+var claudeHaiku55Price = modelPrice{
+	In: 0.10, Out: 0.50, CachedIn: 0.01, CacheWrite: 0.125,
+	LongPromptOver: 100_000,
+	LongPrompt:     &modelPrice{In: 0.50, Out: 2.50, CachedIn: 0.05, CacheWrite: 0.625},
+}
+
 const perMillion = 1e6
 
 // CostFromUsage calculates a result event's list-price cost. It returns zero
@@ -69,11 +99,29 @@ const perMillion = 1e6
 // InputTokens includes all prompt tokens. CacheReadTokens is a discounted
 // subset. CacheWriteTokens is separate only for models with a dedicated write
 // rate; it remains ordinary input when CacheWrite is zero.
+//
+// A result's usage can sum many requests, so a model priced by prompt length
+// is charged at its base rate. Usage events carry a per-request cost that
+// applies the long-prompt rate.
 func CostFromUsage(model string, usage Usage) float64 {
 	price, ok := lookupPrice(model)
 	if !ok {
 		return 0
 	}
+	return price.cost(usage)
+}
+
+// requestCost is CostFromUsage for a single request whose prompt has
+// promptTokens tokens, cached or not.
+func requestCost(model string, usage Usage, promptTokens int) float64 {
+	price, ok := lookupPrice(model)
+	if !ok {
+		return 0
+	}
+	return price.forPrompt(promptTokens).cost(usage)
+}
+
+func (price modelPrice) cost(usage Usage) float64 {
 	uncached := usage.InputTokens - usage.CacheReadTokens
 	if price.CacheWrite > 0 {
 		uncached -= usage.CacheWriteTokens
@@ -107,11 +155,13 @@ const oneHourCacheWriteMultiplier = 2
 // oneHourCacheWriteSurcharge is the cost tokens written to the one-hour cache
 // add on top of the five-minute write rate CostFromUsage already charged them.
 // It is zero for an unknown model or one without a dedicated write rate.
-func oneHourCacheWriteSurcharge(model string, tokens int) float64 {
+// promptTokens is the size of the request's whole prompt.
+func oneHourCacheWriteSurcharge(model string, tokens, promptTokens int) float64 {
 	price, ok := lookupPrice(model)
 	if !ok || price.CacheWrite == 0 || tokens <= 0 {
 		return 0
 	}
+	price = price.forPrompt(promptTokens)
 	return float64(tokens) * (oneHourCacheWriteMultiplier*price.In - price.CacheWrite) / perMillion
 }
 
