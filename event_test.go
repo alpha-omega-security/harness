@@ -184,6 +184,39 @@ func TestClaudeUsageEvents(t *testing.T) {
 	}
 }
 
+func TestClaudeUsageEventsLongPromptRate(t *testing.T) {
+	t.Parallel()
+
+	const model = "claude-haiku-5-5"
+	input := strings.Join([]string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_long","model":"` + model + `","usage":{"input_tokens":10,"cache_creation_input_tokens":5000,"cache_read_input_tokens":120000,"output_tokens":3}}},"api_message_id":"msg_long"}`,
+		`{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"cache_creation_input_tokens":5000,"cache_read_input_tokens":120000,"output_tokens":203}},"api_message_id":"msg_long"}`,
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_short","model":"` + model + `","usage":{"input_tokens":10,"cache_read_input_tokens":90000,"output_tokens":3}}},"api_message_id":"msg_short"}`,
+	}, "\n")
+
+	var costs []float64
+	for _, event := range claudeEvents(input) {
+		if event.Kind == KindUsage {
+			costs = append(costs, event.CostUSD)
+		}
+	}
+	// The second event holds only output growth and still takes the rate of
+	// its 125,010-token prompt.
+	want := []float64{
+		(10*0.50 + 120000*0.05 + 5000*0.625 + 3*2.50) / 1e6,
+		200 * 2.50 / 1e6,
+		(10*0.10 + 90000*0.01 + 3*0.50) / 1e6,
+	}
+	if len(costs) != len(want) {
+		t.Fatalf("usage costs = %v, want %v", costs, want)
+	}
+	for i := range want {
+		if math.Abs(costs[i]-want[i]) > 1e-12 {
+			t.Errorf("usage event %d cost = %v, want %v", i, costs[i], want[i])
+		}
+	}
+}
+
 func TestClaudeUsageEventsWithoutAPIMessageID(t *testing.T) {
 	t.Parallel()
 

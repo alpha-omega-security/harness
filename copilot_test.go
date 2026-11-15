@@ -362,6 +362,34 @@ func collectNonUsage(_ *testing.T, r io.Reader) []Event {
 	return events
 }
 
+func TestCopilotStreamUsageLongPromptRate(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		`{"type":"assistant.usage","data":{"model":"claude-haiku-5.5","inputTokens":100000,"outputTokens":1000}}`,
+		`{"type":"assistant.usage","data":{"model":"claude-haiku-5.5","inputTokens":100001,"outputTokens":1000}}`,
+	}, "\n")
+
+	var costs []float64
+	CopilotHarness{}.ParseStream(strings.NewReader(stream), func(event Event) {
+		if event.Kind == KindUsage {
+			costs = append(costs, event.CostUSD)
+		}
+	})
+	want := []float64{
+		(100000*0.10 + 1000*0.50) / 1e6,
+		(100001*0.50 + 1000*2.50) / 1e6,
+	}
+	if len(costs) != len(want) {
+		t.Fatalf("usage costs = %v, want %v", costs, want)
+	}
+	for i := range want {
+		if math.Abs(costs[i]-want[i]) > 1e-12 {
+			t.Errorf("usage event %d cost = %v, want %v", i, costs[i], want[i])
+		}
+	}
+}
+
 func TestCopilotStreamEmitsUsageEvents(t *testing.T) {
 	t.Parallel()
 
