@@ -368,6 +368,9 @@ func TestCopilotStreamUsageLongPromptRate(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"assistant.usage","data":{"model":"claude-haiku-5.5","inputTokens":100000,"outputTokens":1000}}`,
 		`{"type":"assistant.usage","data":{"model":"claude-haiku-5.5","inputTokens":100001,"outputTokens":1000}}`,
+		`{"type":"assistant.usage","data":{"model":"gpt-5.5","inputTokens":272000,"outputTokens":1000,"cacheReadTokens":200000}}`,
+		`{"type":"assistant.usage","data":{"model":"gpt-5.5","inputTokens":272001,"outputTokens":1000,"cacheReadTokens":200000}}`,
+		`{"type":"assistant.usage","data":{"model":"gpt-5.6-sol","inputTokens":300000,"outputTokens":1000,"cacheReadTokens":100000,"cacheWriteTokens":50000}}`,
 	}, "\n")
 
 	var costs []float64
@@ -379,6 +382,9 @@ func TestCopilotStreamUsageLongPromptRate(t *testing.T) {
 	want := []float64{
 		(100000*0.10 + 1000*0.50) / 1e6,
 		(100001*0.50 + 1000*2.50) / 1e6,
+		(72000*5.00 + 200000*0.50 + 1000*30.00) / 1e6,
+		(72001*10.00 + 200000*1.00 + 1000*45.00) / 1e6,
+		(150000*8.00 + 100000*0.80 + 50000*10.00 + 1000*30.00) / 1e6,
 	}
 	if len(costs) != len(want) {
 		t.Fatalf("usage costs = %v, want %v", costs, want)
