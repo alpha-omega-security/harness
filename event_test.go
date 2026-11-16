@@ -349,9 +349,8 @@ func claudeLogLines(input string) []string {
 	return lines
 }
 
-// A foreground subagent ends on its Agent tool_result, a background one on its
-// task_notification, and every line a subagent produced carries its
-// description.
+// A subagent ends on its first task_notification, never on its Agent
+// tool_result, and every line a subagent produced carries its description.
 func TestClaudeStreamLabelsSubagentActivity(t *testing.T) {
 	t.Parallel()
 
@@ -360,7 +359,8 @@ func TestClaudeStreamLabelsSubagentActivity(t *testing.T) {
 		`{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_fg","description":"Audit batch A","task_type":"local_agent","is_backgrounded":false}`,
 		`{"type":"assistant","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"tool_use","id":"toolu_ls","name":"Bash","input":{"command":"ls"}}]}}`,
 		`{"type":"user","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_ls","content":"a.txt"}]}}`,
-		`{"type":"assistant","parent_tool_use_id":"toolu_fg","message":{"content":[{"type":"text","text":"one file"}]}}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_fg","message":{"id":"msg_a","usage":{"input_tokens":10,"output_tokens":5},"content":[{"type":"text","text":"one file"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a1","tool_use_id":"toolu_fg","status":"completed","summary":"x"}`,
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_fg","content":"one file"}]}}`,
 		`{"type":"system","subtype":"task_started","task_id":"a2","tool_use_id":"toolu_bg","description":"Audit batch B","task_type":"local_agent","is_backgrounded":true}`,
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_bg","content":"launched"}]}}`,
@@ -375,6 +375,7 @@ func TestClaudeStreamLabelsSubagentActivity(t *testing.T) {
 		"[agent:Audit batch A] started",
 		"[agent:Audit batch A] [bash] ls",
 		"[agent:Audit batch A] one file",
+		"[agent:Audit batch A] [usage] in=10 out=5 cache_read=0 cache_write=0 cost=$0.0000",
 		"[agent:Audit batch A] completed",
 		"[agent:Audit batch B] started",
 		"[agent:Audit batch B] [read] /work/a.txt",
@@ -409,9 +410,8 @@ func TestClaudeStreamWithoutSubagentsIsUnlabelled(t *testing.T) {
 	}
 }
 
-// Without task_started, or with a background flag the CLI did not report, a
-// subagent's lines fall back to its tool call id and a tool_result ends
-// nothing, since it may only mean the subagent was launched.
+// Without task_started, a subagent's lines fall back to its tool call id, and
+// a tool_result ends no subagent.
 func TestClaudeStreamSubagentWithoutTaskStarted(t *testing.T) {
 	t.Parallel()
 

@@ -167,11 +167,10 @@ type claudeLine struct {
 // lines. It is decoded on its own so an unexpected field type on any other
 // line cannot make the whole line fail to parse.
 type claudeTask struct {
-	ToolUseID      string `json:"tool_use_id"`
-	Description    string `json:"description"`
-	TaskType       string `json:"task_type"`
-	IsBackgrounded *bool  `json:"is_backgrounded"`
-	Status         string `json:"status"`
+	ToolUseID   string `json:"tool_use_id"`
+	Description string `json:"description"`
+	TaskType    string `json:"task_type"`
+	Status      string `json:"status"`
 }
 
 // claudeStreamEvent is the inner event of a stream_event line, emitted with
@@ -207,13 +206,11 @@ type claudeMessage struct {
 }
 
 type claudeContent struct {
-	Type      string          `json:"type"`
-	Thinking  string          `json:"thinking"`
-	Text      string          `json:"text"`
-	Name      string          `json:"name"`
-	Input     json.RawMessage `json:"input"`
-	ToolUseID string          `json:"tool_use_id"`
-	IsError   bool            `json:"is_error"`
+	Type     string          `json:"type"`
+	Thinking string          `json:"thinking"`
+	Text     string          `json:"text"`
+	Name     string          `json:"name"`
+	Input    json.RawMessage `json:"input"`
 }
 
 // claudeStreamState tracks the highest usage already reported per API message.
@@ -236,11 +233,7 @@ type claudeStreamState struct {
 
 type claudeAgent struct {
 	description string
-	// foreground is set only when task_started says the subagent is not
-	// backgrounded. A background subagent's tool_result arrives as soon as it
-	// is launched, so only its task_notification marks the end.
-	foreground bool
-	ended      bool
+	ended       bool
 }
 
 // claudeReported is the highest usage already reported for one API message.
@@ -284,30 +277,8 @@ func (state *claudeStreamState) handleTask(raw []byte, subtype string, emit func
 	if description == "" {
 		description = task.ToolUseID
 	}
-	state.agents[task.ToolUseID] = &claudeAgent{
-		description: description,
-		foreground:  task.IsBackgrounded != nil && !*task.IsBackgrounded,
-	}
+	state.agents[task.ToolUseID] = &claudeAgent{description: description}
 	emit(Event{Kind: KindSubagent, Agent: description, Text: "started"})
-}
-
-// endForegroundAgents ends each foreground subagent whose Agent call returns
-// in a user line.
-func (state *claudeStreamState) endForegroundAgents(message *claudeMessage, emit func(Event)) {
-	if message == nil {
-		return
-	}
-	for _, block := range message.Content {
-		agent := state.agents[block.ToolUseID]
-		if block.Type != "tool_result" || agent == nil || !agent.foreground {
-			continue
-		}
-		status := "completed"
-		if block.IsError {
-			status = "failed"
-		}
-		state.endAgent(block.ToolUseID, status, emit)
-	}
 }
 
 func (state *claudeStreamState) endAgent(toolUseID, status string, emit func(Event)) {
@@ -322,7 +293,7 @@ func (state *claudeStreamState) endAgent(toolUseID, status string, emit func(Eve
 // reportUsage emits a usage event for the growth of id's usage over what was
 // already reported. Repeated assistant lines and zero-usage synthetic messages
 // therefore emit nothing.
-func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage, emit func(Event)) {
+func (state *claudeStreamState) reportUsage(id, model, agent string, usage *claudeUsage, emit func(Event)) {
 	if id == "" || usage == nil {
 		return
 	}
@@ -356,7 +327,7 @@ func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage
 	// message's whole prompt.
 	prompt := reported.usage.InputTokens + reported.usage.CacheReadTokens + reported.usage.CacheWriteTokens
 	cost := requestCost(model, priced, prompt) + oneHourCacheWriteSurcharge(model, oneHourWrites, prompt)
-	emit(Event{Kind: KindUsage, Model: model, Usage: delta, CostUSD: cost})
+	emit(Event{Kind: KindUsage, Agent: agent, Model: model, Usage: delta, CostUSD: cost})
 }
 
 // handleStreamEvent reports usage from partial-message events and stays silent
@@ -372,7 +343,7 @@ func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(
 			if m.Model != "" {
 				state.models[m.ID] = m.Model
 			}
-			state.reportUsage(m.ID, state.models[m.ID], m.Usage, emit)
+			state.reportUsage(m.ID, state.models[m.ID], "", m.Usage, emit)
 		}
 	case "message_delta":
 		// api_message_id is internal to the CLI and absent from older
@@ -381,7 +352,7 @@ func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(
 		if id == "" {
 			id = state.current
 		}
-		state.reportUsage(id, state.models[id], message.Event.Usage, emit)
+		state.reportUsage(id, state.models[id], "", message.Event.Usage, emit)
 	}
 }
 
@@ -411,11 +382,12 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 			state.handleTask(raw, message.Subtype, emit)
 		}
 	case "assistant":
-		emitClaudeAssistant(message.Message, state.agentLabel(message.ParentToolUseID), emit)
+		agent := state.agentLabel(message.ParentToolUseID)
+		emitClaudeAssistant(message.Message, agent, emit)
 		// Subagent calls emit no stream_event lines, so they only reach here
 		// and their output tokens are a lower bound until the result event.
 		if m := message.Message; m != nil {
-			state.reportUsage(m.ID, m.Model, m.Usage, emit)
+			state.reportUsage(m.ID, m.Model, agent, m.Usage, emit)
 		}
 	case "stream_event":
 		state.handleStreamEvent(message, emit)
@@ -436,9 +408,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		}
 	case "user":
 		// Tool results echo file contents and command output. The matching
-		// tool-use event already carries a concise description, so a user line
-		// only matters when it ends a subagent.
-		state.endForegroundAgents(message.Message, emit)
+		// tool-use event already carries a concise description.
 	default:
 		emit(Event{Kind: KindText, Text: line})
 	}
