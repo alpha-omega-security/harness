@@ -782,6 +782,23 @@ func TestShapeListsEachItemShapeOnceInOrder(t *testing.T) {
 	}
 }
 
+func TestShapeBoundsHostileKeysAndNesting(t *testing.T) {
+	var deep any = map[string]any{strings.Repeat("x", 256<<10): false}
+	for range 1024 {
+		deep = []any{deep}
+	}
+	wide := make(map[string]any)
+	for i := range 10000 {
+		wide[strconv.Itoa(i)] = false
+	}
+	for _, value := range []any{deep, wide, map[string]any{strings.Repeat("x", 256<<10): false}, make([]any, 10000)} {
+		got := shape(value)
+		if len(got) > maxLoggedShape || !strings.HasSuffix(got, "...") {
+			t.Fatalf("shape is not bounded: %d bytes", len(got))
+		}
+	}
+}
+
 func TestProviderRefusalsAreLoggedWithoutTheirBody(t *testing.T) {
 	logs, opts := captureLogs()
 	srv, _, token := setupWith(t, OpenAI, http.StatusBadRequest, opts)

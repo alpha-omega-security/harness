@@ -10,6 +10,23 @@ import (
 	"strings"
 )
 
+const maxStderrBytes = 64 << 10
+
+type stderrTail []byte
+
+func (b *stderrTail) Write(p []byte) (int, error) {
+	n := len(p)
+	if n >= maxStderrBytes {
+		*b = append((*b)[:0], p[n-maxStderrBytes:]...)
+		return n, nil
+	}
+	if drop := len(*b) + n - maxStderrBytes; drop > 0 {
+		*b = (*b)[:copy(*b, (*b)[drop:])]
+	}
+	*b = append(*b, p...)
+	return n, nil
+}
+
 // Run starts h as a local subprocess in j.Workspace and streams parsed events
 // to emit.
 func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
@@ -43,8 +60,8 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 // group instead of orphaning children. On non-zero exit it classifies stderr
 // and any parsed KindError event via h.AccountErrorText and returns an
 // *AccountError on a match; otherwise it returns the raw exec error unwrapped
-// so the caller can add its own context. stderr is returned so a caller can
-// include a runtime failure message in that error.
+// so the caller can add its own context. The last 64 KiB of stderr are returned
+// so a caller can include a runtime failure message in that error.
 func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err error) {
 	if emit == nil {
 		emit = func(Event) {}
@@ -55,18 +72,18 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 	}
 
 	reader, writer := io.Pipe()
-	var stderrBuf strings.Builder
+	var stderrBuf stderrTail
 	cmd.Stdout = writer
 	cmd.Stderr = io.MultiWriter(writer, &stderrBuf)
 
 	parseDone := make(chan struct{})
 	// JSON-output backends may report provider failures on stdout rather than
-	// stderr, so retain parsed error events for account classification.
-	var parsedErrors []string
+	// stderr. Classify them as they arrive instead of retaining an unbounded stream.
+	var parsedAccountError string
 	go func() {
 		h.ParseStream(reader, func(event Event) {
 			if event.Kind == KindError && event.Text != "" {
-				parsedErrors = append(parsedErrors, event.Text)
+				parsedAccountError = PreferAccountErrorText(parsedAccountError, h.AccountErrorText(event.Text))
 			}
 			emit(event)
 		})
@@ -81,14 +98,11 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 	runErr := cmd.Wait()
 	_ = writer.Close()
 	<-parseDone
-	stderr = stderrBuf.String()
+	stderr = string(stderrBuf)
 	if runErr == nil {
 		return stderr, nil
 	}
-	detail := h.AccountErrorText(stderr)
-	for _, text := range parsedErrors {
-		detail = PreferAccountErrorText(detail, h.AccountErrorText(text))
-	}
+	detail := PreferAccountErrorText(h.AccountErrorText(stderr), parsedAccountError)
 	if detail != "" {
 		return stderr, &AccountError{Detail: detail}
 	}

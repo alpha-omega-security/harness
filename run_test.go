@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,6 +92,16 @@ func TestRunAccountError(t *testing.T) {
 	}
 }
 
+func TestStreamCmdKeepsBoundedDiagnostics(t *testing.T) {
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestRunHelperProcess", "--", "large-stderr")
+	cmd.Env = append(os.Environ(), "HARNESS_RUN_HELPER=1")
+	stderr, err := StreamCmd(cmd, runTestHarness{}, nil)
+	var account *AccountError
+	if len(stderr) != maxStderrBytes || !strings.HasSuffix(stderr, "quota exceeded\n") || !asAccountError(err, &account) {
+		t.Fatalf("stderr bytes = %d, error = %v", len(stderr), err)
+	}
+}
+
 func asAccountError(err error, target **AccountError) bool {
 	account, ok := err.(*AccountError)
 	if ok {
@@ -104,6 +115,10 @@ func TestRunHelperProcess(t *testing.T) {
 		return
 	}
 	prompt := os.Args[len(os.Args)-1]
+	if prompt == "large-stderr" {
+		_, _ = io.WriteString(os.Stderr, strings.Repeat("x", maxStderrBytes*2)+"\nquota exceeded\n")
+		os.Exit(2)
+	}
 	if prompt == "account" {
 		_, _ = fmt.Fprintln(os.Stderr, "quota exceeded")
 		os.Exit(2)

@@ -5,17 +5,31 @@ import (
 	"io"
 )
 
-// scanJSONL reads complete logical lines without bufio.Scanner's token limit.
-// Agent output can contain very large thinking blocks or tool results; losing
-// the remainder would also lose terminal usage, session, and error events.
-// Non-EOF read failures become one error event.
+const maxJSONLLine = 16 << 20
+
+// Oversized lines are drained so a hostile tool result cannot exhaust the host
+// or hide the session, usage and error events that follow it.
 func scanJSONL(r io.Reader, emit func(Event), parse func([]byte, func(Event))) {
 	br := bufio.NewReader(r)
+	var raw []byte
+	var oversized bool
 	for {
-		raw, err := br.ReadBytes('\n')
-		if len(raw) > 0 {
+		part, err := br.ReadSlice('\n')
+		if !oversized {
+			if len(raw)+len(part) > maxJSONLLine {
+				raw, oversized = nil, true
+				emit(Event{Kind: KindError, Text: "stream line exceeds 16 MiB"})
+			} else {
+				raw = append(raw, part...)
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if !oversized && len(raw) > 0 {
 			parse(raw, emit)
 		}
+		raw, oversized = raw[:0], false
 		if err == io.EOF {
 			return
 		}

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -399,7 +398,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			var v any
 			_ = json.Unmarshal(raw, &v)
-			p.log.Warn("model proxy refused a request", "route", route, "shape", truncate(shape(v), maxLoggedShape))
+			p.log.Warn("model proxy refused a request", "route", route, "shape", shape(v))
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -524,36 +523,6 @@ func (p *Proxy) safeBody(b []byte) ([]byte, error) {
 	}
 
 	return json.Marshal(v)
-}
-
-// shape describes a refused request by its keys and protocol type names, so a log shows which position the
-// filter refused without the conversation text it carries.
-func shape(v any) string {
-	switch v := v.(type) {
-	case map[string]any:
-		keys := slices.Sorted(maps.Keys(v))
-		parts := make([]string, 0, len(keys))
-		for _, k := range keys {
-			if s, ok := v[k].(string); ok && (k == "type" || k == "role" || k == "execution") {
-				parts = append(parts, k+"="+s)
-				continue
-			}
-			parts = append(parts, k+":"+shape(v[k]))
-		}
-		return "{" + strings.Join(parts, " ") + "}"
-	case []any:
-		var parts []string
-		seen := map[string]bool{}
-		for _, item := range v {
-			if s := shape(item); !seen[s] {
-				seen[s] = true
-				parts = append(parts, s)
-			}
-		}
-		return "[" + strings.Join(parts, " ") + "]"
-	default:
-		return fmt.Sprintf("%T", v)
-	}
 }
 
 func truncate(s string, n int) string {
