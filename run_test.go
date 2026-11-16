@@ -47,7 +47,7 @@ func (runTestHarness) Env(string) []string {
 }
 
 func (runTestHarness) AccountErrorText(s string) string {
-	return matchAccountPhrase(s, []string{"quota exceeded"})
+	return claudeAccountErrorText(s)
 }
 
 func TestRun(t *testing.T) {
@@ -102,6 +102,35 @@ func TestStreamCmdKeepsBoundedDiagnostics(t *testing.T) {
 	}
 }
 
+// TestStreamCmdClassifiesStderrBeyondTail pins that account phrases written
+// before the retained stderr tail still classify the failure.
+func TestStreamCmdClassifiesStderrBeyondTail(t *testing.T) {
+	for _, tc := range []struct {
+		prompt string
+		detail string
+	}{
+		{"early-quota", "quota exceeded"},
+		{"revoked-then-rate-limit", "access has been revoked"},
+		{"large-noise", ""},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=TestRunHelperProcess", "--", tc.prompt)
+			cmd.Env = append(os.Environ(), "HARNESS_RUN_HELPER=1")
+			_, err := StreamCmd(cmd, runTestHarness{}, nil)
+			var account *AccountError
+			if tc.detail == "" {
+				if err == nil || asAccountError(err, &account) {
+					t.Fatalf("error = %v, want a plain process error", err)
+				}
+				return
+			}
+			if !asAccountError(err, &account) || account.Detail != tc.detail {
+				t.Fatalf("error = %v, want account error %q", err, tc.detail)
+			}
+		})
+	}
+}
+
 func asAccountError(err error, target **AccountError) bool {
 	account, ok := err.(*AccountError)
 	if ok {
@@ -117,6 +146,18 @@ func TestRunHelperProcess(t *testing.T) {
 	prompt := os.Args[len(os.Args)-1]
 	if prompt == "large-stderr" {
 		_, _ = io.WriteString(os.Stderr, strings.Repeat("x", maxStderrBytes*2)+"\nquota exceeded\n")
+		os.Exit(2)
+	}
+	noise := strings.Repeat("x", maxStderrBytes*2) + "\n"
+	switch prompt {
+	case "early-quota":
+		_, _ = io.WriteString(os.Stderr, "quota exceeded\n"+noise)
+		os.Exit(2)
+	case "revoked-then-rate-limit":
+		_, _ = io.WriteString(os.Stderr, "access has been revoked\n"+noise+"rate limit\n")
+		os.Exit(2)
+	case "large-noise":
+		_, _ = io.WriteString(os.Stderr, noise)
 		os.Exit(2)
 	}
 	if prompt == "account" {

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,38 @@ func (b *stderrTail) Write(p []byte) (int, error) {
 	}
 	*b = append(*b, p...)
 	return n, nil
+}
+
+// stderrAccountError classifies each complete stderr line as it is written, so
+// an account phrase followed by more than maxStderrBytes of output is not lost.
+type stderrAccountError struct {
+	h      Harness
+	line   []byte
+	detail string
+}
+
+func (c *stderrAccountError) Write(p []byte) (int, error) {
+	n := len(p)
+	for {
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			break
+		}
+		c.append(p[:i])
+		c.flush()
+		p = p[i+1:]
+	}
+	c.append(p)
+	return n, nil
+}
+
+func (c *stderrAccountError) append(p []byte) {
+	c.line = append(c.line, p[:min(len(p), maxStderrBytes-len(c.line))]...)
+}
+
+func (c *stderrAccountError) flush() {
+	c.detail = PreferAccountErrorText(c.detail, c.h.AccountErrorText(string(c.line)))
+	c.line = c.line[:0]
 }
 
 // Run starts h as a local subprocess in j.Workspace and streams parsed events
@@ -73,12 +106,13 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 
 	reader, writer := io.Pipe()
 	var stderrBuf stderrTail
+	stderrAccount := stderrAccountError{h: h}
 	cmd.Stdout = writer
-	cmd.Stderr = io.MultiWriter(writer, &stderrBuf)
+	cmd.Stderr = io.MultiWriter(writer, &stderrBuf, &stderrAccount)
 
 	parseDone := make(chan struct{})
 	// JSON-output backends may report provider failures on stdout rather than
-	// stderr. Classify them as they arrive instead of retaining an unbounded stream.
+	// stderr. Classify them as they arrive.
 	var parsedAccountError string
 	go func() {
 		h.ParseStream(reader, func(event Event) {
@@ -102,7 +136,8 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 	if runErr == nil {
 		return stderr, nil
 	}
-	detail := PreferAccountErrorText(h.AccountErrorText(stderr), parsedAccountError)
+	stderrAccount.flush()
+	detail := PreferAccountErrorText(stderrAccount.detail, parsedAccountError)
 	if detail != "" {
 		return stderr, &AccountError{Detail: detail}
 	}

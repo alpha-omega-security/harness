@@ -8,12 +8,10 @@ import (
 
 const (
 	maxShapeDepth = 32
-	maxShapeNodes = 256
 	shapeOmitted  = "..."
 )
 
-// Refused requests are hostile too: bound the traversal and the allocation,
-// rather than truncating a recursively constructed string afterwards.
+// Refused requests are hostile too: bound the traversal and the allocation.
 func shape(v any) string {
 	w := shapeWriter{data: make([]byte, 0, maxLoggedShape)}
 	w.value(v, 0)
@@ -25,7 +23,6 @@ func shape(v any) string {
 
 type shapeWriter struct {
 	data      []byte
-	nodes     int
 	truncated bool
 }
 
@@ -44,11 +41,10 @@ func (w *shapeWriter) value(v any, depth int) {
 	if w.truncated {
 		return
 	}
-	if depth >= maxShapeDepth || w.nodes >= maxShapeNodes {
+	if depth >= maxShapeDepth {
 		w.truncated = true
 		return
 	}
-	w.nodes++
 	switch v := v.(type) {
 	case map[string]any:
 		w.object(v, depth)
@@ -61,10 +57,6 @@ func (w *shapeWriter) value(v any, depth int) {
 
 func (w *shapeWriter) object(v map[string]any, depth int) {
 	w.text("{")
-	if len(v) > maxShapeNodes-w.nodes {
-		w.truncated = true
-		return
-	}
 	for i, k := range slices.Sorted(maps.Keys(v)) {
 		if w.truncated {
 			break
