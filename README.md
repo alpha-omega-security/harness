@@ -152,6 +152,7 @@ subagent's task description on every event that subagent produced, emits a
 `subagent` event when it starts and ends, and `FormatEvent` prefixes those lines
 with `[agent:<description>]`. The other backends never set `Agent`, and the
 Codex and OpenCode CLIs print nothing from their subagents' sessions.
+
 `CostFromUsage` calculates a list-price estimate when the CLI reports tokens
 without a dollar amount. Copilot's `CostUSD` uses the latest cumulative
 `session.usage_checkpoint` when one is present, so on a resumed Copilot session
