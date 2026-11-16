@@ -285,14 +285,19 @@ func (CodexHarness) StateEnv(dir string) []string {
 }
 
 func (CodexHarness) DefaultModels() []ModelDefault {
-	// IDs mirror Codex's built-in model catalog. The Codex-tuned model comes
-	// first because that is the CLI's default when --model is absent.
+	// IDs mirror the listed models in Codex 0.169.0's bundled catalog, in its
+	// priority order, except GPT-5.5, which Codex rejects for ChatGPT logins.
+	// GPT-6.1 Sol comes first because that is the CLI's default when --model is
+	// absent.
 	return []ModelDefault{
-		{Name: "GPT-5.3 Codex", ID: modelGPT53CodexID, Tier: modelTierHigh},
-		{Name: "GPT-5.4 mini", ID: modelGPT54MiniID, Tier: modelTierMid},
-		{Name: "GPT-5.4", ID: modelGPT54ID},
-		{Name: "GPT-5.5", ID: modelGPT55ID, Tier: modelTierMax},
-		{Name: "GPT-5.2", ID: "gpt-5.2"},
+		{Name: "GPT-6.1 Sol", ID: "gpt-6.1-sol", Tier: modelTierHigh},
+		{Name: "GPT-6 Astra", ID: "gpt-6-astra", Tier: modelTierMax},
+		{Name: "GPT-6 Sol", ID: "gpt-6-sol"},
+		{Name: "GPT-6 Luna", ID: "gpt-6-luna"},
+		{Name: "GPT-5.6 Sol", ID: modelGPT56SolID},
+		{Name: "GPT-6.1 Terra", ID: "gpt-6.1-terra", Tier: modelTierMid},
+		{Name: "GPT-5.6 Terra", ID: modelGPT56TerraID},
+		{Name: "GPT-5.6 Luna", ID: modelGPT56LunaID},
 	}
 }
 

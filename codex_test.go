@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -40,6 +41,24 @@ func TestCodexArgsAndStream(t *testing.T) {
 	}
 	if events[3].Usage.CacheReadTokens != 20 || events[3].Turns != 1 {
 		t.Errorf("result event = %+v", events[3])
+	}
+}
+
+func TestCodexDefaultModelResultCost(t *testing.T) {
+	t.Parallel()
+
+	model := CodexHarness{}.DefaultModels()[0].ID
+	if model != "gpt-6.1-sol" {
+		t.Fatalf("default model = %q, want gpt-6.1-sol", model)
+	}
+	input := `{"type":"turn.completed","usage":{"input_tokens":100000,"cached_input_tokens":40000,"output_tokens":5000}}`
+	var result Event
+	CodexHarness{}.ParseStream(strings.NewReader(input), func(event Event) {
+		result = event
+	})
+	want := (60000*2.00 + 40000*0.10 + 5000*10.00) / 1e6
+	if got := CostFromUsage(model, result.Usage); math.Abs(got-want) > 1e-9 {
+		t.Errorf("CostFromUsage(%q, %+v) = %v, want %v", model, result.Usage, got, want)
 	}
 }
 
