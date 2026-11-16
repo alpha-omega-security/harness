@@ -56,7 +56,8 @@ func TestCodexDefaultModelResultCost(t *testing.T) {
 	CodexHarness{}.ParseStream(strings.NewReader(input), func(event Event) {
 		result = event
 	})
-	want := (60000*2.00 + 40000*0.10 + 5000*10.00) / 1e6
+	price := modelPricing[model]
+	want := (60000*price.In + 40000*price.CachedIn + 5000*price.Out) / 1e6
 	if got := CostFromUsage(model, result.Usage); math.Abs(got-want) > 1e-9 {
 		t.Errorf("CostFromUsage(%q, %+v) = %v, want %v", model, result.Usage, got, want)
 	}

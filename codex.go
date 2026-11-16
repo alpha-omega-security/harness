@@ -288,7 +288,7 @@ func (CodexHarness) DefaultModels() []ModelDefault {
 	// IDs mirror the listed models in Codex 0.169.0's bundled catalog, in its
 	// priority order, except GPT-5.5, which Codex rejects for ChatGPT logins.
 	// GPT-6.1 Sol comes first because that is the CLI's default when --model is
-	// absent.
+	// absent. The GPT-6 models require Codex 0.153.0 or later.
 	return []ModelDefault{
 		{Name: "GPT-6.1 Sol", ID: "gpt-6.1-sol", Tier: modelTierHigh},
 		{Name: "GPT-6 Astra", ID: "gpt-6-astra", Tier: modelTierMax},
