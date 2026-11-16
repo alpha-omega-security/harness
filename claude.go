@@ -158,6 +158,19 @@ type claudeLine struct {
 	RateLimitInfo *RateLimitInfo     `json:"rate_limit_info"`
 	Event         *claudeStreamEvent `json:"event"`
 	APIMessageID  string             `json:"api_message_id"`
+	// ParentToolUseID is the tool call that started the subagent this line
+	// comes from, and null on the main conversation.
+	ParentToolUseID string `json:"parent_tool_use_id"`
+}
+
+// claudeTask is the payload of the task_started and task_notification system
+// lines. It is decoded on its own so an unexpected field type on any other
+// line cannot make the whole line fail to parse.
+type claudeTask struct {
+	ToolUseID   string `json:"tool_use_id"`
+	Description string `json:"description"`
+	TaskType    string `json:"task_type"`
+	Status      string `json:"status"`
 }
 
 // claudeStreamEvent is the inner event of a stream_event line, emitted with
@@ -213,6 +226,14 @@ type claudeStreamState struct {
 	current string
 	// sessionCostUSD is the latest cumulative total_cost_usd in the stream.
 	sessionCostUSD float64
+	// agents holds the subagents task_started announced, keyed by the Agent
+	// tool call that started them.
+	agents map[string]*claudeAgent
+}
+
+type claudeAgent struct {
+	description string
+	ended       bool
 }
 
 // claudeReported is the highest usage already reported for one API message.
@@ -222,13 +243,57 @@ type claudeReported struct {
 }
 
 func newClaudeStreamState() *claudeStreamState {
-	return &claudeStreamState{reported: map[string]claudeReported{}, models: map[string]string{}}
+	return &claudeStreamState{
+		reported: map[string]claudeReported{},
+		models:   map[string]string{},
+		agents:   map[string]*claudeAgent{},
+	}
+}
+
+// agentLabel names the subagent a line belongs to. A subagent whose
+// task_started has not been seen keeps its tool call id, so its events still
+// stand apart from the main conversation.
+func (state *claudeStreamState) agentLabel(parentToolUseID string) string {
+	if agent := state.agents[parentToolUseID]; agent != nil {
+		return agent.description
+	}
+	return parentToolUseID
+}
+
+func (state *claudeStreamState) handleTask(raw []byte, subtype string, emit func(Event)) {
+	var task claudeTask
+	if json.Unmarshal(raw, &task) != nil || task.ToolUseID == "" {
+		return
+	}
+	if subtype == "task_notification" {
+		state.endAgent(task.ToolUseID, task.Status, emit)
+		return
+	}
+	// Background Bash commands and Monitor watches report tasks too.
+	if task.TaskType != "local_agent" {
+		return
+	}
+	description := task.Description
+	if description == "" {
+		description = task.ToolUseID
+	}
+	state.agents[task.ToolUseID] = &claudeAgent{description: description}
+	emit(Event{Kind: KindSubagent, Agent: description, Text: "started"})
+}
+
+func (state *claudeStreamState) endAgent(toolUseID, status string, emit func(Event)) {
+	agent := state.agents[toolUseID]
+	if agent == nil || agent.ended {
+		return
+	}
+	agent.ended = true
+	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: status})
 }
 
 // reportUsage emits a usage event for the growth of id's usage over what was
 // already reported. Repeated assistant lines and zero-usage synthetic messages
 // therefore emit nothing.
-func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage, emit func(Event)) {
+func (state *claudeStreamState) reportUsage(id, model, agent string, usage *claudeUsage, emit func(Event)) {
 	if id == "" || usage == nil {
 		return
 	}
@@ -262,7 +327,7 @@ func (state *claudeStreamState) reportUsage(id, model string, usage *claudeUsage
 	// message's whole prompt.
 	prompt := reported.usage.InputTokens + reported.usage.CacheReadTokens + reported.usage.CacheWriteTokens
 	cost := requestCost(model, priced, prompt) + oneHourCacheWriteSurcharge(model, oneHourWrites, prompt)
-	emit(Event{Kind: KindUsage, Model: model, Usage: delta, CostUSD: cost})
+	emit(Event{Kind: KindUsage, Agent: agent, Model: model, Usage: delta, CostUSD: cost})
 }
 
 // handleStreamEvent reports usage from partial-message events and stays silent
@@ -278,7 +343,7 @@ func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(
 			if m.Model != "" {
 				state.models[m.ID] = m.Model
 			}
-			state.reportUsage(m.ID, state.models[m.ID], m.Usage, emit)
+			state.reportUsage(m.ID, state.models[m.ID], "", m.Usage, emit)
 		}
 	case "message_delta":
 		// api_message_id is internal to the CLI and absent from older
@@ -287,7 +352,7 @@ func (state *claudeStreamState) handleStreamEvent(message claudeLine, emit func(
 		if id == "" {
 			id = state.current
 		}
-		state.reportUsage(id, state.models[id], message.Event.Usage, emit)
+		state.reportUsage(id, state.models[id], "", message.Event.Usage, emit)
 	}
 }
 
@@ -308,15 +373,21 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		// loaded the saved conversation. A failed resume emits no init, then
 		// reports a new throwaway session id in its result, which must not be
 		// treated as a successful resume.
-		if message.Subtype == "init" && message.SessionID != "" {
-			emit(Event{Kind: KindSession, SessionID: message.SessionID})
+		switch message.Subtype {
+		case "init":
+			if message.SessionID != "" {
+				emit(Event{Kind: KindSession, SessionID: message.SessionID})
+			}
+		case "task_started", "task_notification":
+			state.handleTask(raw, message.Subtype, emit)
 		}
 	case "assistant":
-		emitClaudeAssistant(message.Message, emit)
+		agent := state.agentLabel(message.ParentToolUseID)
+		emitClaudeAssistant(message.Message, agent, emit)
 		// Subagent calls emit no stream_event lines, so they only reach here
 		// and their output tokens are a lower bound until the result event.
 		if m := message.Message; m != nil {
-			state.reportUsage(m.ID, m.Model, m.Usage, emit)
+			state.reportUsage(m.ID, m.Model, agent, m.Usage, emit)
 		}
 	case "stream_event":
 		state.handleStreamEvent(message, emit)
@@ -343,7 +414,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 	}
 }
 
-func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
+func emitClaudeAssistant(message *claudeMessage, agent string, emit func(Event)) {
 	if message == nil {
 		return
 	}
@@ -351,14 +422,14 @@ func emitClaudeAssistant(message *claudeMessage, emit func(Event)) {
 		switch block.Type {
 		case "thinking":
 			if block.Thinking != "" {
-				emit(Event{Kind: KindThinking, Text: block.Thinking})
+				emit(Event{Kind: KindThinking, Agent: agent, Text: block.Thinking})
 			}
 		case wireTypeText:
 			if block.Text != "" {
-				emit(Event{Kind: KindText, Text: block.Text})
+				emit(Event{Kind: KindText, Agent: agent, Text: block.Text})
 			}
 		case "tool_use":
-			emit(Event{Kind: KindTool, Tool: block.Name, Text: summariseInput(block.Name, block.Input)})
+			emit(Event{Kind: KindTool, Agent: agent, Tool: block.Name, Text: summariseInput(block.Name, block.Input)})
 		}
 	}
 }
