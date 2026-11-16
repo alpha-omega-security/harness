@@ -130,18 +130,18 @@ func (ClaudeHarness) DefaultModels() []ModelDefault {
 	// Explicit tier tags avoid forcing callers to infer defaults from display
 	// names. The first model remains the backend default.
 	return []ModelDefault{
-		{Name: "Opus 4.6", ID: "claude-opus-4-6", Tier: modelTierHigh},
+		{Name: "Opus 5.5", ID: "claude-opus-5-5", Tier: modelTierHigh},
+		{Name: "Opus 4.6", ID: "claude-opus-4-6"},
 		{Name: "Opus 4.7", ID: "claude-opus-4-7"},
 		{Name: "Opus 4.8", ID: "claude-opus-4-8"},
-		{Name: "Opus 5.0", ID: modelClaudeOpus5ID, Tier: modelTierMax},
-		{Name: "Opus 5.5", ID: "claude-opus-5-5"},
-		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6", Tier: modelTierMid},
+		{Name: "Opus 5.0", ID: modelClaudeOpus5ID},
+		{Name: "Sonnet 4.6", ID: "claude-sonnet-4-6"},
 		{Name: "Sonnet 5.0", ID: modelClaudeSonnet5ID},
-		{Name: "Sonnet 5.5", ID: "claude-sonnet-5-5"},
+		{Name: "Sonnet 5.5", ID: "claude-sonnet-5-5", Tier: modelTierMid},
 		{Name: "Haiku 5.5", ID: "claude-haiku-5-5"},
 		{Name: "Fable 5", ID: "claude-fable-5[1m]"},
 		{Name: "Fable 5.1", ID: "claude-fable-5-1[1m]"},
-		{Name: "Fable 5.2", ID: "claude-fable-5-2[1m]"},
+		{Name: "Fable 5.2", ID: "claude-fable-5-2[1m]", Tier: modelTierMax},
 	}
 }
 

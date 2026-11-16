@@ -183,6 +183,27 @@ func TestDefaultModelsArePriced(t *testing.T) {
 	}
 }
 
+func TestDefaultModelsTagEachTierOnce(t *testing.T) {
+	t.Parallel()
+
+	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}} {
+		tagged := map[string][]string{}
+		for _, model := range h.DefaultModels() {
+			if model.Tier != "" {
+				tagged[model.Tier] = append(tagged[model.Tier], model.ID)
+			}
+		}
+		for _, tier := range []string{modelTierMid, modelTierHigh, modelTierMax} {
+			if len(tagged[tier]) != 1 {
+				t.Errorf("%s tier %q tags %v, want one model", Name(h), tier, tagged[tier])
+			}
+		}
+		if len(tagged) != 3 {
+			t.Errorf("%s tiers = %v, want only mid, high and max", Name(h), tagged)
+		}
+	}
+}
+
 type unregisteredHarness struct{}
 
 func (unregisteredHarness) Binary() string                     { return "custom" }
