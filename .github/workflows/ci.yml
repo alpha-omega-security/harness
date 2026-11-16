@@ -63,6 +63,9 @@ jobs:
       - name: Vet integration tests
         run: go vet -tags integration ./...
 
+      - name: Vet price check
+        run: go vet -tags pricecheck ./...
+
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
 
