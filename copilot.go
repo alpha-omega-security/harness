@@ -559,12 +559,17 @@ func (CopilotHarness) StateEnv(dir string) []string {
 }
 
 func (CopilotHarness) DefaultModels() []ModelDefault {
-	// This is Copilot CLI 1.0.80's /model --list --json catalog. The reported
-	// current model, GPT-5.6 Sol, is moved first because callers treat the first
-	// entry as the default. Dotted Anthropic IDs are distinct from Claude Code's
-	// hyphenated IDs.
+	// This is Copilot CLI 1.0.80's /model --list --json catalog plus the Claude
+	// 5.5 models and Fable 5.2, which models.dev lists under github-copilot. The
+	// reported current model, GPT-5.6 Sol, is moved first because callers treat
+	// the first entry as the default. Dotted Anthropic IDs are distinct from
+	// Claude Code's hyphenated IDs.
 	return []ModelDefault{
 		{Name: "GPT-5.6 Sol", ID: modelGPT56SolID},
+		{Name: "Claude Fable 5.2", ID: "claude-fable-5.2"},
+		{Name: "Claude Opus 5.5", ID: "claude-opus-5.5"},
+		{Name: "Claude Sonnet 5.5", ID: "claude-sonnet-5.5"},
+		{Name: "Claude Haiku 5.5", ID: "claude-haiku-5.5"},
 		{Name: "Claude Sonnet 5", ID: modelClaudeSonnet5ID},
 		{Name: "Claude Opus 5", ID: modelClaudeOpus5ID, Tier: modelTierMax},
 		{Name: "Claude Opus 4.8", ID: "claude-opus-4.8"},
