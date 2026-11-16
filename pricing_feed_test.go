@@ -288,7 +288,7 @@ func TestPricingDrift_reportsDifferences(t *testing.T) {
 	delete(anthropic["claude-haiku-5-5"], "tiers")
 	delete(anthropic, "claude-fable-5-2")
 	anthropic["claude-opus-4-8"]["tiers"] = []map[string]any{fixtureTier(200_000, 10, 37.5, 1, 12.5)}
-	feed["openai"]["gpt-5.5"]["tiers"] = []map[string]any{fixtureTier(272_000, 10, 50, 1, 0)}
+	feed["openai"]["gpt-6.1-sol"]["tiers"] = []map[string]any{fixtureTier(272_000, 4, 20, 0.2, 5)}
 	feed["github-copilot"]["gpt-5-mini"] = nil
 
 	want := []string{
@@ -298,7 +298,7 @@ func TestPricingDrift_reportsDifferences(t *testing.T) {
 		"anthropic/claude-opus-5-5 input: table 4, feed 3.5",
 		"anthropic/claude-sonnet-5-5 cache_write: table 2.5, feed 9",
 		"github-copilot/gpt-5-mini missing: feed has no price",
-		"openai/gpt-5.5 long_prompt: table over 272000 tokens in=10 out=45 cache_read=1 cache_write=0, feed over 272000 tokens in=10 out=50 cache_read=1 cache_write=0",
+		"openai/gpt-6.1-sol long_prompt: table over 272000 tokens in=4 out=15 cache_read=0.2 cache_write=5, feed over 272000 tokens in=4 out=20 cache_read=0.2 cache_write=5",
 	}
 	if got := pricingDrift(feed.decode(t), nil); !slices.Equal(got, want) {
 		t.Errorf("pricingDrift() =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

@@ -251,7 +251,7 @@ job := harness.Job{
     Workspace:  "/work",
     SrcDir:     ".",
     SkillName:  skill.Name,
-    Model:      "gpt-5.3-codex",
+    Model:      "gpt-6.1-sol",
     OutputFile: "report.json",
 }
 if _, err := harness.StageSkill(h, job, nil, skill); err != nil {

@@ -19,6 +19,8 @@ const (
 	modelGPT54ID         = "gpt-5.4"
 	modelGPT55ID         = "gpt-5.5"
 	modelGPT56SolID      = "gpt-5.6-sol"
+	modelGPT56TerraID    = "gpt-5.6-terra"
+	modelGPT56LunaID     = "gpt-5.6-luna"
 	modelDaybreakBlueID  = "gpt-daybreak-blue-latest"
 
 	modelTierMid  = "mid"

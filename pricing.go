@@ -72,13 +72,23 @@ var modelPricing = map[string]modelPrice{
 	"claude-fable-5.2":  {In: 8.00, Out: 40.00, CachedIn: 0.20, CacheWrite: 10.00},
 
 	// OpenAI
-	// Sol's promotional standard rates apply through 2026-11-30.
 	// https://developers.openai.com/api/docs/pricing
+	"gpt-6.1-sol": modelPrice{In: 2.00, Out: 10.00, CachedIn: 0.10, CacheWrite: 2.50}.
+		over(openAILongPrompt, modelPrice{In: 4.00, Out: 15.00, CachedIn: 0.20, CacheWrite: 5.00}),
+	"gpt-6.1-terra": modelPrice{In: 1.00, Out: 5.00, CachedIn: 0.05, CacheWrite: 1.25}.
+		over(openAILongPrompt, modelPrice{In: 2.00, Out: 7.50, CachedIn: 0.10, CacheWrite: 2.50}),
+	"gpt-6-astra": modelPrice{In: 10.00, Out: 50.00, CachedIn: 1.00, CacheWrite: 12.50}.
+		over(openAILongPrompt, modelPrice{In: 20.00, Out: 75.00, CachedIn: 2.00, CacheWrite: 25.00}),
+	"gpt-6-sol": modelPrice{In: 2.00, Out: 10.00, CachedIn: 0.20, CacheWrite: 2.50}.
+		over(openAILongPrompt, modelPrice{In: 4.00, Out: 15.00, CachedIn: 0.40, CacheWrite: 5.00}),
+	"gpt-6-luna": modelPrice{In: 0.10, Out: 0.50, CachedIn: 0.01, CacheWrite: 0.125}.
+		over(openAILongPrompt, modelPrice{In: 0.20, Out: 0.75, CachedIn: 0.02, CacheWrite: 0.25}),
+	// GPT-5.6 Sol's promotional standard rates apply through 2026-11-30.
 	modelGPT56SolID: modelPrice{In: 4.00, Out: 20.00, CachedIn: 0.40, CacheWrite: 5.00}.
 		over(openAILongPrompt, modelPrice{In: 8.00, Out: 30.00, CachedIn: 0.80, CacheWrite: 10.00}),
-	"gpt-5.6-terra": modelPrice{In: 2.00, Out: 12.00, CachedIn: 0.20, CacheWrite: 2.50}.
+	modelGPT56TerraID: modelPrice{In: 2.00, Out: 12.00, CachedIn: 0.20, CacheWrite: 2.50}.
 		over(openAILongPrompt, modelPrice{In: 4.00, Out: 18.00, CachedIn: 0.40, CacheWrite: 5.00}),
-	"gpt-5.6-luna": modelPrice{In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25}.
+	modelGPT56LunaID: modelPrice{In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25}.
 		over(openAILongPrompt, modelPrice{In: 0.40, Out: 1.80, CachedIn: 0.04, CacheWrite: 0.50}),
 	modelGPT55ID: modelPrice{In: 5.00, Out: 30.00, CachedIn: 0.50}.
 		over(openAILongPrompt, modelPrice{In: 10.00, Out: 45.00, CachedIn: 1.00}),
@@ -86,7 +96,6 @@ var modelPricing = map[string]modelPrice{
 		over(openAILongPrompt, modelPrice{In: 5.00, Out: 22.50, CachedIn: 0.50}),
 	modelGPT54MiniID:  {In: 0.75, Out: 4.50, CachedIn: 0.075},
 	modelGPT53CodexID: {In: 1.75, Out: 14.00, CachedIn: 0.175},
-	"gpt-5.2":         {In: 1.75, Out: 14.00, CachedIn: 0.175},
 	"gpt-5-mini":      {In: 0.25, Out: 2.00, CachedIn: 0.025},
 
 	// Copilot-hosted Microsoft, Google, and xAI models.
