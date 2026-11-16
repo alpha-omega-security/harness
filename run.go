@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,55 @@ import (
 	"os/exec"
 	"strings"
 )
+
+const maxStderrBytes = 64 << 10
+
+type stderrTail []byte
+
+func (b *stderrTail) Write(p []byte) (int, error) {
+	n := len(p)
+	if n >= maxStderrBytes {
+		*b = append((*b)[:0], p[n-maxStderrBytes:]...)
+		return n, nil
+	}
+	if drop := len(*b) + n - maxStderrBytes; drop > 0 {
+		*b = (*b)[:copy(*b, (*b)[drop:])]
+	}
+	*b = append(*b, p...)
+	return n, nil
+}
+
+// stderrAccountError classifies each complete stderr line as it is written, so
+// an account phrase followed by more than maxStderrBytes of output is not lost.
+type stderrAccountError struct {
+	h      Harness
+	line   []byte
+	detail string
+}
+
+func (c *stderrAccountError) Write(p []byte) (int, error) {
+	n := len(p)
+	for {
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			break
+		}
+		c.append(p[:i])
+		c.flush()
+		p = p[i+1:]
+	}
+	c.append(p)
+	return n, nil
+}
+
+func (c *stderrAccountError) append(p []byte) {
+	c.line = append(c.line, p[:min(len(p), maxStderrBytes-len(c.line))]...)
+}
+
+func (c *stderrAccountError) flush() {
+	c.detail = PreferAccountErrorText(c.detail, c.h.AccountErrorText(string(c.line)))
+	c.line = c.line[:0]
+}
 
 // Run starts h as a local subprocess in j.Workspace and streams parsed events
 // to emit.
@@ -43,8 +93,8 @@ func Run(ctx context.Context, h Harness, j Job, emit func(Event)) error {
 // group instead of orphaning children. On non-zero exit it classifies stderr
 // and any parsed KindError event via h.AccountErrorText and returns an
 // *AccountError on a match; otherwise it returns the raw exec error unwrapped
-// so the caller can add its own context. stderr is returned so a caller can
-// include a runtime failure message in that error.
+// so the caller can add its own context. The last 64 KiB of stderr are returned
+// so a caller can include a runtime failure message in that error.
 func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err error) {
 	if emit == nil {
 		emit = func(Event) {}
@@ -55,18 +105,19 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 	}
 
 	reader, writer := io.Pipe()
-	var stderrBuf strings.Builder
+	var stderrBuf stderrTail
+	stderrAccount := stderrAccountError{h: h}
 	cmd.Stdout = writer
-	cmd.Stderr = io.MultiWriter(writer, &stderrBuf)
+	cmd.Stderr = io.MultiWriter(writer, &stderrBuf, &stderrAccount)
 
 	parseDone := make(chan struct{})
 	// JSON-output backends may report provider failures on stdout rather than
-	// stderr, so retain parsed error events for account classification.
-	var parsedErrors []string
+	// stderr. Classify them as they arrive.
+	var parsedAccountError string
 	go func() {
 		h.ParseStream(reader, func(event Event) {
 			if event.Kind == KindError && event.Text != "" {
-				parsedErrors = append(parsedErrors, event.Text)
+				parsedAccountError = PreferAccountErrorText(parsedAccountError, h.AccountErrorText(event.Text))
 			}
 			emit(event)
 		})
@@ -81,14 +132,12 @@ func StreamCmd(cmd *exec.Cmd, h Harness, emit func(Event)) (stderr string, err e
 	runErr := cmd.Wait()
 	_ = writer.Close()
 	<-parseDone
-	stderr = stderrBuf.String()
+	stderr = string(stderrBuf)
 	if runErr == nil {
 		return stderr, nil
 	}
-	detail := h.AccountErrorText(stderr)
-	for _, text := range parsedErrors {
-		detail = PreferAccountErrorText(detail, h.AccountErrorText(text))
-	}
+	stderrAccount.flush()
+	detail := PreferAccountErrorText(stderrAccount.detail, parsedAccountError)
 	if detail != "" {
 		return stderr, &AccountError{Detail: detail}
 	}

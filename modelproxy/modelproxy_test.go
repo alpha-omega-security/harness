@@ -782,6 +782,42 @@ func TestShapeListsEachItemShapeOnceInOrder(t *testing.T) {
 	}
 }
 
+func TestShapeBoundsHostileKeysAndNesting(t *testing.T) {
+	var deep any = map[string]any{strings.Repeat("x", 256<<10): false}
+	for range 1024 {
+		deep = []any{deep}
+	}
+	wide := make(map[string]any)
+	for i := range 10000 {
+		wide[strconv.Itoa(i)] = false
+	}
+	for _, value := range []any{deep, wide, map[string]any{strings.Repeat("x", 256<<10): false}} {
+		got := shape(value)
+		if len(got) > maxLoggedShape || !strings.HasSuffix(got, "...") {
+			t.Fatalf("shape is not bounded: %d bytes", len(got))
+		}
+	}
+	if got := shape(make([]any, 10000)); got != "[<nil>]" {
+		t.Errorf("shape = %q, want duplicate items listed once", got)
+	}
+}
+
+// TestShapeReachesFieldsAfterALongConversation pins that repeated message
+// shapes do not exhaust the shape before the fields sorted after messages.
+func TestShapeReachesFieldsAfterALongConversation(t *testing.T) {
+	message := `{"role":"user","content":[{"type":"text","text":"x"},{"type":"tool_result","tool_use_id":"t","content":"r"}]}`
+	body := `{"model":"m","messages":[` + strings.TrimSuffix(strings.Repeat(message+",", 200), ",") + `],"tools":{}}`
+	var v any
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		t.Fatal(err)
+	}
+
+	got := shape(v)
+	if !strings.HasSuffix(got, " tools:{}}") {
+		t.Errorf("shape = %q, want the refused tools field", got)
+	}
+}
+
 func TestProviderRefusalsAreLoggedWithoutTheirBody(t *testing.T) {
 	logs, opts := captureLogs()
 	srv, _, token := setupWith(t, OpenAI, http.StatusBadRequest, opts)
