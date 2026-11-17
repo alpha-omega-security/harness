@@ -247,9 +247,11 @@ func (OpencodeHarness) DefaultModels() []ModelDefault {
 	claude := ClaudeHarness{}.DefaultModels()
 	models := make([]ModelDefault, len(claude))
 	for i, model := range claude {
+		// A [1m] suffix is a Claude Code alias; models.dev lists the bare ID.
+		id, _, _ := strings.Cut(model.ID, "[")
 		models[i] = ModelDefault{
 			Name: model.Name,
-			ID:   "anthropic/" + model.ID,
+			ID:   "anthropic/" + id,
 			Tier: model.Tier,
 		}
 	}

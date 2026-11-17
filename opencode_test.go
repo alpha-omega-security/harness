@@ -27,6 +27,22 @@ func TestOpencodeArgsRunStandalone(t *testing.T) {
 	}
 }
 
+func TestOpencodeDefaultModelsDropClaudeCodeSuffix(t *testing.T) {
+	t.Parallel()
+
+	for _, model := range (OpencodeHarness{}).DefaultModels() {
+		if strings.Contains(model.ID, "[") {
+			t.Errorf("model %q has Claude Code suffix", model.ID)
+		}
+		if model.Tier == modelTierMax {
+			args := OpencodeHarness{}.Args(Job{Prompt: "p", Model: model.ID})
+			if !slices.Contains(args, "anthropic/claude-fable-5-2") {
+				t.Errorf("Args() = %v, want anthropic/claude-fable-5-2", args)
+			}
+		}
+	}
+}
+
 func TestOpencodeStream(t *testing.T) {
 	t.Parallel()
 
