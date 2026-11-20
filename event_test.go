@@ -424,7 +424,73 @@ func TestClaudeStreamSubagentWithoutTaskStarted(t *testing.T) {
 		`{"type":"system","subtype":"task_started","task_id":"c2","task_type":"local_agent","description":"no tool call"}`,
 	}, "\n")
 
-	want := []string{"[agent:toolu_x] [grep] TODO", "[agent:toolu_y] started"}
+	want := []string{"[agent:toolu_x] [grep] TODO", "[agent:toolu_y] started", "[agent:no tool call] started"}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines = %q, want %q", got, want)
+	}
+}
+
+// A subagent resumed in one stream keeps one label across both runs.
+func TestClaudeStreamLabelsResumedSubagentByAgentID(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_first","description":"Audit batch A","task_type":"local_agent"}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_first","agent_id":"a1","message":{"content":[{"type":"text","text":"first run"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a1","tool_use_id":"toolu_first","status":"completed","summary":"x"}`,
+		`{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_resume","description":"Continue batch A","task_type":"local_agent"}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_first","agent_id":"a1","message":{"id":"msg_r","usage":{"input_tokens":4,"output_tokens":2},"content":[{"type":"text","text":"resumed run"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a1","status":"completed","summary":"x"}`,
+	}, "\n")
+
+	want := []string{
+		"[agent:Audit batch A] started",
+		"[agent:Audit batch A] first run",
+		"[agent:Audit batch A] completed",
+		"[agent:Audit batch A] started",
+		"[agent:Audit batch A] resumed run",
+		"[agent:Audit batch A] [usage] in=4 out=2 cache_read=0 cache_write=0 cost=$0.0000",
+		"[agent:Audit batch A] completed",
+	}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// After --resume, parent_tool_use_id names a call from the earlier process.
+func TestClaudeStreamLabelsSubagentAcrossSessionResume(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"toolu_resume","description":"Continue batch A","task_type":"local_agent"}`,
+		`{"type":"assistant","parent_tool_use_id":"toolu_earlier_process","agent_id":"a1","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a1","tool_use_id":"toolu_resume","status":"stopped","summary":"x"}`,
+	}, "\n")
+
+	want := []string{
+		"[agent:Continue batch A] started",
+		"[agent:Continue batch A] [bash] ls",
+		"[agent:Continue batch A] stopped",
+	}
+	if got := claudeLogLines(input); !slices.Equal(got, want) {
+		t.Errorf("log lines = %q, want %q", got, want)
+	}
+}
+
+func TestClaudeStreamUnknownAgentIDAndNotificationWithoutToolUseID(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`{"type":"assistant","parent_tool_use_id":"toolu_gone","agent_id":"a9","message":{"content":[{"type":"text","text":"orphan"}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"a2","tool_use_id":"toolu_2","description":"Audit batch B","task_type":"local_agent"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"a2","status":"failed","summary":"x"}`,
+	}, "\n")
+
+	want := []string{
+		"[agent:a9] orphan",
+		"[agent:Audit batch B] started",
+		"[agent:Audit batch B] failed",
+	}
 	if got := claudeLogLines(input); !slices.Equal(got, want) {
 		t.Errorf("log lines = %q, want %q", got, want)
 	}
