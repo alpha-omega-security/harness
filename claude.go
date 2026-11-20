@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"encoding/json"
 	"io"
 	"path/filepath"
@@ -158,15 +159,21 @@ type claudeLine struct {
 	RateLimitInfo *RateLimitInfo     `json:"rate_limit_info"`
 	Event         *claudeStreamEvent `json:"event"`
 	APIMessageID  string             `json:"api_message_id"`
-	// ParentToolUseID is the tool call that started the subagent this line
-	// comes from, and null on the main conversation.
+	// ParentToolUseID is the tool call that first started the subagent this
+	// line comes from, and null on the main conversation. A resumed subagent
+	// keeps it, so it can differ from the tool_use_id on its task events.
 	ParentToolUseID string `json:"parent_tool_use_id"`
+	// AgentID names the subagent this line comes from, and is absent on the
+	// main conversation and from older CLIs. It equals the task_id on the
+	// subagent's task events and survives resumes.
+	AgentID string `json:"agent_id"`
 }
 
 // claudeTask is the payload of the task_started and task_notification system
 // lines. It is decoded on its own so an unexpected field type on any other
 // line cannot make the whole line fail to parse.
 type claudeTask struct {
+	TaskID      string `json:"task_id"`
 	ToolUseID   string `json:"tool_use_id"`
 	Description string `json:"description"`
 	TaskType    string `json:"task_type"`
@@ -226,9 +233,14 @@ type claudeStreamState struct {
 	current string
 	// sessionCostUSD is the latest cumulative total_cost_usd in the stream.
 	sessionCostUSD float64
-	// agents holds the subagents task_started announced, keyed by the Agent
-	// tool call that started them.
+	// agents holds the subagents task_started announced, keyed by task_id,
+	// which a line's agent_id matches and which stays the same when the
+	// subagent is resumed.
 	agents map[string]*claudeAgent
+	// toolAgents maps each tool call that started or resumed a subagent to
+	// its entry in agents. It labels lines without agent_id and ends tasks
+	// whose notification lacks task_id.
+	toolAgents map[string]*claudeAgent
 }
 
 type claudeAgent struct {
@@ -244,50 +256,75 @@ type claudeReported struct {
 
 func newClaudeStreamState() *claudeStreamState {
 	return &claudeStreamState{
-		reported: map[string]claudeReported{},
-		models:   map[string]string{},
-		agents:   map[string]*claudeAgent{},
+		reported:   map[string]claudeReported{},
+		models:     map[string]string{},
+		agents:     map[string]*claudeAgent{},
+		toolAgents: map[string]*claudeAgent{},
 	}
 }
 
-// agentLabel names the subagent a line belongs to. A subagent whose
-// task_started has not been seen keeps its tool call id, so its events still
-// stand apart from the main conversation.
-func (state *claudeStreamState) agentLabel(parentToolUseID string) string {
-	if agent := state.agents[parentToolUseID]; agent != nil {
+// agentLabel names the subagent a line belongs to. It matches agent_id
+// against task_id first, since a resumed subagent's lines keep the
+// parent_tool_use_id of the call that first started it. Lines from older CLIs
+// carry no agent_id and fall back to parent_tool_use_id. A subagent whose
+// task_started has not been seen keeps its raw id, so its events still stand
+// apart from the main conversation.
+func (state *claudeStreamState) agentLabel(agentID, parentToolUseID string) string {
+	if agent := state.agents[agentID]; agent != nil {
 		return agent.description
+	}
+	if agent := state.toolAgents[parentToolUseID]; agent != nil {
+		return agent.description
+	}
+	if agentID != "" {
+		return agentID
 	}
 	return parentToolUseID
 }
 
 func (state *claudeStreamState) handleTask(raw []byte, subtype string, emit func(Event)) {
 	var task claudeTask
-	if json.Unmarshal(raw, &task) != nil || task.ToolUseID == "" {
+	if json.Unmarshal(raw, &task) != nil {
 		return
 	}
 	if subtype == "task_notification" {
-		state.endAgent(task.ToolUseID, task.Status, emit)
+		state.endAgent(task, emit)
 		return
 	}
 	// Background Bash commands and Monitor watches report tasks too.
 	if task.TaskType != "local_agent" {
 		return
 	}
-	description := task.Description
-	if description == "" {
-		description = task.ToolUseID
+	key := cmp.Or(task.TaskID, task.ToolUseID)
+	if key == "" {
+		return
 	}
-	state.agents[task.ToolUseID] = &claudeAgent{description: description}
-	emit(Event{Kind: KindSubagent, Agent: description, Text: "started"})
+	// A resumed subagent announces a new run under the same task_id. It
+	// keeps its first description so all of its lines share one label.
+	agent := state.agents[key]
+	if agent == nil {
+		agent = &claudeAgent{description: cmp.Or(task.Description, task.ToolUseID, key)}
+		state.agents[key] = agent
+	}
+	agent.ended = false
+	if task.ToolUseID != "" {
+		state.toolAgents[task.ToolUseID] = agent
+	}
+	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: "started"})
 }
 
-func (state *claudeStreamState) endAgent(toolUseID, status string, emit func(Event)) {
-	agent := state.agents[toolUseID]
+// endAgent ends the subagent run a task_notification reports. tool_use_id is
+// optional on it, so it is matched on task_id first.
+func (state *claudeStreamState) endAgent(task claudeTask, emit func(Event)) {
+	agent := state.agents[task.TaskID]
+	if agent == nil {
+		agent = state.toolAgents[task.ToolUseID]
+	}
 	if agent == nil || agent.ended {
 		return
 	}
 	agent.ended = true
-	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: status})
+	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: task.Status})
 }
 
 // reportUsage emits a usage event for the growth of id's usage over what was
@@ -382,7 +419,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 			state.handleTask(raw, message.Subtype, emit)
 		}
 	case "assistant":
-		agent := state.agentLabel(message.ParentToolUseID)
+		agent := state.agentLabel(message.AgentID, message.ParentToolUseID)
 		emitClaudeAssistant(message.Message, agent, emit)
 		// Subagent calls emit no stream_event lines, so they only reach here
 		// and their output tokens are a lower bound until the result event.
