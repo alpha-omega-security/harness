@@ -160,12 +160,9 @@ type claudeLine struct {
 	Event         *claudeStreamEvent `json:"event"`
 	APIMessageID  string             `json:"api_message_id"`
 	// ParentToolUseID is the tool call that first started the subagent this
-	// line comes from, and null on the main conversation. A resumed subagent
-	// keeps it, so it can differ from the tool_use_id on its task events.
+	// line comes from, and null on the main conversation.
 	ParentToolUseID string `json:"parent_tool_use_id"`
-	// AgentID names the subagent this line comes from, and is absent on the
-	// main conversation and from older CLIs. It equals the task_id on the
-	// subagent's task events and survives resumes.
+	// AgentID equals the task_id on the subagent's task events. Older CLIs omit it.
 	AgentID string `json:"agent_id"`
 }
 
@@ -233,13 +230,10 @@ type claudeStreamState struct {
 	current string
 	// sessionCostUSD is the latest cumulative total_cost_usd in the stream.
 	sessionCostUSD float64
-	// agents holds the subagents task_started announced, keyed by task_id,
-	// which a line's agent_id matches and which stays the same when the
-	// subagent is resumed.
+	// agents holds the subagents task_started announced, keyed by task_id.
 	agents map[string]*claudeAgent
 	// toolAgents maps each tool call that started or resumed a subagent to
-	// its entry in agents. It labels lines without agent_id and ends tasks
-	// whose notification lacks task_id.
+	// its entry in agents.
 	toolAgents map[string]*claudeAgent
 }
 
@@ -263,12 +257,10 @@ func newClaudeStreamState() *claudeStreamState {
 	}
 }
 
-// agentLabel names the subagent a line belongs to. It matches agent_id
-// against task_id first, since a resumed subagent's lines keep the
-// parent_tool_use_id of the call that first started it. Lines from older CLIs
-// carry no agent_id and fall back to parent_tool_use_id. A subagent whose
-// task_started has not been seen keeps its raw id, so its events still stand
-// apart from the main conversation.
+// agentLabel names the subagent a line belongs to. agent_id is tried first
+// because a resumed subagent's lines keep the parent_tool_use_id of the call
+// that first started it. A subagent whose task_started has not been seen
+// keeps its raw id, so its events still stand apart from the main conversation.
 func (state *claudeStreamState) agentLabel(agentID, parentToolUseID string) string {
 	if agent := state.agents[agentID]; agent != nil {
 		return agent.description
@@ -313,8 +305,6 @@ func (state *claudeStreamState) handleTask(raw []byte, subtype string, emit func
 	emit(Event{Kind: KindSubagent, Agent: agent.description, Text: "started"})
 }
 
-// endAgent ends the subagent run a task_notification reports. tool_use_id is
-// optional on it, so it is matched on task_id first.
 func (state *claudeStreamState) endAgent(task claudeTask, emit func(Event)) {
 	agent := state.agents[task.TaskID]
 	if agent == nil {

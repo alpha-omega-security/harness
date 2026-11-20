@@ -411,8 +411,7 @@ func TestClaudeStreamWithoutSubagentsIsUnlabelled(t *testing.T) {
 }
 
 // Without task_started, a subagent's lines fall back to its tool call id, and
-// a tool_result ends no subagent. tool_use_id is optional on task events, so a
-// task_started without it is still tracked by task_id.
+// a tool_result ends no subagent.
 func TestClaudeStreamSubagentWithoutTaskStarted(t *testing.T) {
 	t.Parallel()
 
@@ -431,10 +430,7 @@ func TestClaudeStreamSubagentWithoutTaskStarted(t *testing.T) {
 	}
 }
 
-// A resumed subagent's task events carry the resuming call's tool_use_id,
-// while its lines keep the parent_tool_use_id of the call that first started
-// it. agent_id equals task_id across both runs, so every line keeps one label
-// and each run reports its own start and end.
+// A subagent resumed in one stream keeps one label across both runs.
 func TestClaudeStreamLabelsResumedSubagentByAgentID(t *testing.T) {
 	t.Parallel()
 
@@ -461,9 +457,7 @@ func TestClaudeStreamLabelsResumedSubagentByAgentID(t *testing.T) {
 	}
 }
 
-// After --resume the stream state starts empty. The resumed subagent's lines
-// still carry the parent_tool_use_id of a call from the earlier process, so
-// only agent_id ties them to the task_started of this process.
+// After --resume, parent_tool_use_id names a call from the earlier process.
 func TestClaudeStreamLabelsSubagentAcrossSessionResume(t *testing.T) {
 	t.Parallel()
 
@@ -483,9 +477,6 @@ func TestClaudeStreamLabelsSubagentAcrossSessionResume(t *testing.T) {
 	}
 }
 
-// A line with an agent_id whose task_started was never seen keeps the
-// agent_id as its label, and a notification without tool_use_id still ends
-// its subagent through task_id.
 func TestClaudeStreamUnknownAgentIDAndNotificationWithoutToolUseID(t *testing.T) {
 	t.Parallel()
 
