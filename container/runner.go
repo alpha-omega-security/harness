@@ -4,6 +4,7 @@ import (
 	"context"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,7 +17,8 @@ import (
 const DefaultImage = "ghcr.io/alpha-omega-security/scrutineer-runner:latest"
 
 // tmpfsSpec is the /tmp tmpfs mount spec. HOME points here so backend session
-// files land in the container, not the host user's dotfiles. The mount stays
+// files land in the container, not the host user's dotfiles, except for a
+// backend whose StateEnv sets HOME while StateDir is set. The mount stays
 // executable because build tools such as Go run temporary binaries from it.
 const tmpfsSpec = "/tmp:rw,exec,nosuid,size=256m"
 
@@ -155,6 +157,15 @@ func (r Runner) args(h harness.Harness, j harness.Job, absWork string) []string 
 	return r.argsAt(h, j, absWork, WorkMount)
 }
 
+// stateSetsHome reports whether h keeps its resumable state under HOME. HOME=/tmp
+// is then left out, since a Go CLI such as agy reads the first of two HOME
+// entries if the runtime passes both through.
+func (r Runner) stateSetsHome(h harness.Harness) bool {
+	return r.StateDir != "" && slices.ContainsFunc(h.StateEnv(StateMount), func(e string) bool {
+		return strings.HasPrefix(e, "HOME=")
+	})
+}
+
 func (r Runner) argsAt(h harness.Harness, j harness.Job, absWork, workDir string, entrypoint ...string) []string {
 	args := r.Runtime.runArgs(
 		"--rm",
@@ -166,10 +177,10 @@ func (r Runner) argsAt(h harness.Harness, j harness.Job, absWork, workDir string
 		args = append(args, "--init")
 	}
 	args = appendHostUser(args)
-	args = append(args,
-		"-e", "HOME=/tmp",
-		"--tmpfs", tmpfsSpec,
-	)
+	if !r.stateSetsHome(h) {
+		args = append(args, "-e", "HOME=/tmp")
+	}
+	args = append(args, "--tmpfs", tmpfsSpec)
 	if r.ReadOnlyWorkspace {
 		args = append(args,
 			"-v", bindMount(absWork, WorkMount, r.SELinuxRelabel, "ro"),

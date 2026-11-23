@@ -98,6 +98,13 @@ var modelPricing = map[string]modelPrice{
 	modelGPT53CodexID: {In: 1.75, Out: 14.00, CachedIn: 0.175},
 	"gpt-5-mini":      {In: 0.25, Out: 2.00, CachedIn: 0.025},
 
+	// Google
+	// Carbon's rates double on 2026-12-01.
+	// https://aistudio.google.com/docs/pricing
+	"gemini-4-neon":     {In: 3.00, Out: 15.00, CachedIn: 0.15},
+	"gemini-4-carbon":   {In: 2.00, Out: 10.00, CachedIn: 0.10},
+	"gemini-4-hydrogen": {In: 1.50, Out: 7.50, CachedIn: 0.075},
+
 	// Copilot-hosted Microsoft, Google, and xAI models.
 	"mai-code-1-flash-picker": {In: 0.75, Out: 4.50, CachedIn: 0.07},
 	"mai-code-1.1-flash":      {In: 0.20, Out: 1.20, CachedIn: 0.02, CacheWrite: 0.25},

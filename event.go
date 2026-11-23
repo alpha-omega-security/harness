@@ -37,9 +37,11 @@ const (
 // taxonomy and change independently of any CLI's JSON schema, so matching an
 // upstream payload against them would couple two unrelated vocabularies.
 const (
-	wireTypeText  = "text"
-	wireTypeTool  = "tool"
-	wireTypeError = "error"
+	wireTypeText   = "text"
+	wireTypeTool   = "tool"
+	wireTypeError  = "error"
+	wireTypeInit   = "init"
+	wireTypeResult = "result"
 )
 
 // Event is one backend-neutral item from an agent's output stream. Tool,

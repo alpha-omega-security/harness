@@ -1,15 +1,16 @@
 # harness
 
 `harness` is a Go library for driving AI coding CLIs in headless mode. It
-supports Claude Code, Codex, GitHub Copilot CLI, and OpenCode through one
-interface while leaving process placement to the caller. A command can run on
-the host, inside a container, or through a remote runner with the same arguments
-and event parser.
+supports Antigravity CLI, Claude Code, Codex, GitHub Copilot CLI, and OpenCode
+through one interface while leaving process placement to the caller. A command
+can run on the host, inside a container, or through a remote runner with the
+same arguments and event parser.
 
 ## Supported backends
 
 | Name | Binary | Credential environment | Staged skill path | Project instructions | Model API hosts |
 | --- | --- | --- | --- | --- | --- |
+| `antigravity` | `agy` | `GEMINI_API_KEY` | `.agents/skills/<name>` | `AGENTS.md` | `generativelanguage.googleapis.com` |
 | `claude` | `claude` | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` | `.claude/skills/<name>` | `CLAUDE.md` | `*.anthropic.com` |
 | `codex` | `codex` | `CODEX_API_KEY` | `skills/<name>` | `AGENTS.md` | `api.openai.com`, `auth0.openai.com`, `chatgpt.com` |
 | `copilot` | `copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` | `.github/skills/<name>` | `.github/copilot-instructions.md` | `github.com`, `api.github.com`, `api.mcp.github.com`, `*.githubcopilot.com` |
@@ -32,6 +33,19 @@ image adds with `ENV PATH`.
 OpenCode runs with `--standalone`, so each run starts its own server. Without
 it OpenCode 2 hands the session to a background service that outlives the run
 and keeps its logs to itself, so `OPENCODE_PRINT_LOGS` has nothing to mirror.
+
+The Antigravity adapter targets agy 1.5.15 against the Gemini API. agy reads
+its model provider only from `settings.json`, so `Args` passes
+`--settings '{"modelProvider":"gemini"}'` to select `GEMINI_API_KEY` for the
+run without writing that file, and `Job.BaseURL` sets `GOOGLE_GEMINI_BASE_URL`.
+agy keeps its conversations under `$HOME/.gemini` and has no variable to move
+them, so its `StateEnv` sets `HOME`, and whatever an agent writes under `HOME`
+lands in the state directory too. agy answers a resume whose conversation is
+gone by starting a new one with the resume prompt alone, so `RunSession` stops
+it on the warning agy prints first and handles it as any failed resume. agy
+retries a 429 itself before it exits non-zero, which took 106 seconds against a
+stub API that always refused, so a quota error reaches `AccountErrorText` that
+much later.
 
 The library owns the details that differ between CLIs: binary names, arguments,
 credential and state environment variables, project instruction files, skill
@@ -81,7 +95,8 @@ uses `--system-prompt` with Claude and the backend's project instruction file
 for the other CLIs.
 
 `MaxTurns` uses the backend default when set to zero; Copilot maps it to maximum
-autopilot continuations. `Effort` applies to Claude, Codex, and Copilot.
+autopilot continuations. `Effort` applies to Antigravity, Claude, Codex, and
+Copilot.
 `AllowedTools` applies only to Claude. `ResumeSessionID` and `ResumePrompt`
 continue an existing conversation. `RunSession` runs a job through `Run` or
 `container.Scope.Run` and returns the session the backend announced, so a
@@ -120,7 +135,7 @@ Use `ByName` to select a backend. An empty name selects Claude.
 ```go
 h, err := harness.ByName("codex")
 name := harness.Name(h)
-available := harness.Names() // "claude, codex, copilot, opencode"
+available := harness.Names() // "antigravity, claude, codex, copilot, opencode"
 ```
 
 Each parser produces the same event type:
@@ -285,7 +300,8 @@ arguments, so the helper does not write a guide file.
 
 The generated arguments allow unattended tool use. Claude uses
 `bypassPermissions` unless `AllowedTools` is set. Codex uses
-`danger-full-access`, OpenCode uses `--auto`, and Copilot uses `--allow-all`.
+`danger-full-access`, OpenCode uses `--auto`, Copilot uses `--allow-all`, and
+Antigravity uses `--dangerously-skip-permissions`.
 Run these commands only in a workspace and execution environment where those
 permissions are acceptable. Container and remote callers should apply their
 own filesystem, process, secret, and network limits.
@@ -384,9 +400,9 @@ its first model request when it signs in with an access token.
 
 `renovate/agent-clis.json` updates the agent CLI releases a Dockerfile pins as
 `ARG <CLI>_<AMD64|ARM64>_LOCK=<tag>@sha256:<digest>`, for `CLAUDE`, `CODEX`,
-`OPENCODE` and `COPILOT`, and groups both architectures of a CLI into one
-update. Extend it at a harness tag so a change to the preset is reviewed like
-any other dependency update:
+`OPENCODE`, `COPILOT` and `ANTIGRAVITY`, and groups both architectures of a CLI
+into one update. Extend it at a harness tag so a change to the preset is
+reviewed like any other dependency update:
 
 ```json
 {

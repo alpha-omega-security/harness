@@ -32,7 +32,7 @@ type Repair struct {
 	// schema and may be nil.
 	Validate func([]byte) error
 	// MaxTurns caps the repair round, DefaultRepairMaxTurns when zero. Like
-	// Job.MaxTurns, Codex and OpenCode ignore it.
+	// Job.MaxTurns, Antigravity, Codex and OpenCode ignore it.
 	MaxTurns int
 	// MaxBytes caps the output read, DefaultOutputMaxBytes when zero.
 	MaxBytes int64

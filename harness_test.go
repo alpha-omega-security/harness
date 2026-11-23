@@ -46,7 +46,7 @@ func TestArgsGuardsTrailingPrompt(t *testing.T) {
 func TestRegistry(t *testing.T) {
 	t.Parallel()
 
-	if Names() != "claude, codex, copilot, opencode" {
+	if Names() != "antigravity, claude, codex, copilot, opencode" {
 		t.Fatalf("Names() = %q", Names())
 	}
 	for _, name := range strings.Split(Names(), ", ") {
@@ -100,6 +100,12 @@ func TestBackendPathsAndState(t *testing.T) {
 				"OPENCODE_CONFIG_DIR=/state",
 				"OPENCODE_DB=/state/opencode.db",
 			},
+		},
+		{
+			harness: AntigravityHarness{},
+			skill:   filepath.Join(workspace, ".agents", "skills", "audit"),
+			guide:   "AGENTS.md",
+			state:   []string{"HOME=/state"},
 		},
 		{
 			harness: CopilotHarness{},
@@ -160,7 +166,7 @@ func TestPrompts(t *testing.T) {
 	t.Parallel()
 
 	job := Job{SkillName: "audit", OutputFile: "report.json"}
-	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}} {
+	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}, AntigravityHarness{}} {
 		prompt := h.Prompt(job)
 		if !strings.Contains(prompt, "audit") ||
 			!strings.Contains(prompt, "report.json") ||
@@ -173,7 +179,7 @@ func TestPrompts(t *testing.T) {
 func TestDefaultModelsArePriced(t *testing.T) {
 	t.Parallel()
 
-	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}} {
+	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}, AntigravityHarness{}} {
 		for _, model := range h.DefaultModels() {
 			usage := Usage{InputTokens: 1, OutputTokens: 1}
 			if CostFromUsage(model.ID, usage) == 0 {
@@ -186,7 +192,7 @@ func TestDefaultModelsArePriced(t *testing.T) {
 func TestDefaultModelsTagEachTierOnce(t *testing.T) {
 	t.Parallel()
 
-	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}} {
+	for _, h := range []Harness{ClaudeHarness{}, CodexHarness{}, OpencodeHarness{}, CopilotHarness{}, AntigravityHarness{}} {
 		tagged := map[string][]string{}
 		for _, model := range h.DefaultModels() {
 			if model.Tier != "" {

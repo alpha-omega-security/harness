@@ -28,7 +28,7 @@ func (CopilotHarness) Args(j Job) []string {
 	}
 	args := []string{
 		"-p", CopilotHarness{}.Prompt(j),
-		"--output-format", "json",
+		flagOutputFormat, "json",
 		"--autopilot",
 		"--max-autopilot-continues", strconv.Itoa(maxTurns),
 		"--allow-all",
@@ -205,7 +205,7 @@ func (state *copilotStreamState) parseLine(raw []byte, emit func(Event)) {
 		if event.AgentID == "" {
 			state.result.Turns++
 		}
-	case "result":
+	case wireTypeResult:
 		state.sawTerminal = true
 		if event.SessionID != "" {
 			emit(Event{Kind: KindSession, SessionID: event.SessionID})
@@ -600,7 +600,7 @@ func (CopilotHarness) DefaultModels() []ModelDefault {
 var copilotAccountPhrases = []string{
 	accountPhraseRateLimit,
 	accountPhraseTooManyRequests,
-	"quota",
+	accountPhraseQuota,
 	"not entitled",
 	"copilot access",
 	"authentication failed",

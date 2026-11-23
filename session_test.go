@@ -113,6 +113,85 @@ func TestRunSessionKeepsFailedResume(t *testing.T) {
 	}
 }
 
+func TestRunSessionStopsAntigravityFreshResume(t *testing.T) {
+	for name, tc := range map[string]struct {
+		job  Job
+		runs int
+	}{
+		"restarts with the prompt": {Job{Prompt: "start over", ResumeSessionID: "dead", ResumePrompt: "fix it"}, 2},
+		"resume prompt only":       {Job{ResumeSessionID: "dead", ResumePrompt: "fix it"}, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var jobs []Job
+			stopped := false
+			run := func(ctx context.Context, j Job, emit func(Event)) error {
+				jobs = append(jobs, j)
+				if j.ResumeSessionID == "" {
+					emit(Event{Kind: KindSession, SessionID: "fresh"})
+					return nil
+				}
+				emit(Event{Kind: KindText, Text: `warning: conversation "dead" not found`})
+				stopped = ctx.Err() != nil
+				emit(Event{Kind: KindSession, SessionID: "throwaway"})
+				return ctx.Err()
+			}
+			var sessions []string
+			s, err := RunSession(t.Context(), run, tc.job, func(e Event) {
+				if e.Kind == KindSession {
+					sessions = append(sessions, e.SessionID)
+				}
+			})
+			if !stopped {
+				t.Error("the run that lost its conversation was not cancelled")
+			}
+			if slices.Contains(sessions, "throwaway") {
+				t.Errorf("emit forwarded agy's throwaway session: %v", sessions)
+			}
+			if len(jobs) != tc.runs {
+				t.Fatalf("jobs = %+v, want %d runs", jobs, tc.runs)
+			}
+			if tc.runs == 2 && (err != nil || s.ID != "fresh" || jobs[1].ResumeSessionID != "" || jobs[1].Prompt != "start over") {
+				t.Errorf("session = %+v, err = %v, jobs = %+v", s, err, jobs)
+			}
+			if tc.runs == 1 && (err == nil || !strings.Contains(err.Error(), "conversation dead not found") || s.ID != "") {
+				t.Errorf("session = %+v, err = %v", s, err)
+			}
+		})
+	}
+}
+
+func TestRunSessionStopsCapturedAntigravityFreshResume(t *testing.T) {
+	data, err := os.ReadFile("testdata/antigravity-1.5.15-lost-resume.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runs int
+	run := func(ctx context.Context, j Job, emit func(Event)) error {
+		runs++
+		if j.ResumeSessionID == "" {
+			emit(Event{Kind: KindSession, SessionID: "fresh"})
+			return nil
+		}
+		// A cancelled agy is killed, so nothing it would print afterwards arrives.
+		AntigravityHarness{}.ParseStream(strings.NewReader(string(data)), func(e Event) {
+			if ctx.Err() == nil {
+				emit(e)
+			}
+		})
+		return ctx.Err()
+	}
+	var kinds []string
+	s, err := RunSession(t.Context(), run, Job{Prompt: "start over", ResumeSessionID: "0b8c1d2e-0000-4000-8000-000000000000", ResumePrompt: "Fix it."}, func(e Event) {
+		kinds = append(kinds, e.Kind)
+	})
+	if err != nil || s.ID != "fresh" || runs != 2 {
+		t.Errorf("session = %+v, err = %v, runs = %d", s, err, runs)
+	}
+	if slices.Contains(kinds, KindTool) || slices.Contains(kinds, KindUsage) {
+		t.Errorf("the lost resume kept running: %v", kinds)
+	}
+}
+
 // sessionRunHarness parses the helper's output as claude does, so stderr
 // reaches RunSession the way Run delivers it.
 type sessionRunHarness struct{ runTestHarness }

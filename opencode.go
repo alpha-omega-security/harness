@@ -192,7 +192,7 @@ func (OpencodeHarness) SkillDir(workspace, name string) string {
 	return filepath.Join(workspace, ".opencode", "skill", name)
 }
 
-func (OpencodeHarness) GuideFilename() string { return "AGENTS.md" }
+func (OpencodeHarness) GuideFilename() string { return agentsGuideFilename }
 
 func (OpencodeHarness) SystemPromptViaArgs() bool { return false }
 
@@ -266,7 +266,7 @@ var opencodeAccountPhrases = []string{
 	accountPhraseTooManyRequests,
 	"429",
 	"usage limit",
-	"quota",
+	accountPhraseQuota,
 	"insufficient_quota",
 	"invalid_api_key",
 	"incorrect api key",

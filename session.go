@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -13,6 +14,12 @@ const maxTurnsText = "hit max turns"
 // missingSessionTexts are what claude and codex print when the conversation
 // to resume is gone.
 var missingSessionTexts = []string{"No conversation found with session ID", "no rollout found for thread id"}
+
+// agyMissingConversation is what agy prints before it carries on in a new
+// conversation holding only the resume prompt, and then exits zero.
+func agyMissingConversation(id string) string {
+	return `conversation "` + id + `" not found`
+}
 
 // Session is what one invocation reported about its conversation.
 type Session struct {
@@ -54,17 +61,34 @@ func RunSession(ctx context.Context, run func(context.Context, Job, func(Event))
 }
 
 func runSession(ctx context.Context, run func(context.Context, Job, func(Event)) error, j Job, emit func(Event)) (Session, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var s Session
+	stopped := false
 	err := run(ctx, j, func(event Event) {
 		switch {
 		case event.Kind == KindSession && event.SessionID != "":
+			if stopped {
+				// The session announced after the warning is agy's throwaway one.
+				return
+			}
 			s.ID = event.SessionID
 		case event.Kind == KindError && event.Text == maxTurnsText:
 			s.MaxTurns = true
 		case event.Kind == KindText || event.Kind == KindError:
 			s.missing = s.missing || slices.ContainsFunc(missingSessionTexts, func(text string) bool { return strings.Contains(event.Text, text) })
+			if j.ResumeSessionID != "" && strings.Contains(event.Text, agyMissingConversation(j.ResumeSessionID)) {
+				// agy prints this before its first model call, so stopping it here
+				// spends nothing on the resume prompt alone.
+				s.missing, stopped = true, true
+				cancel()
+			}
 		}
 		emit(event)
 	})
+	if stopped {
+		s.ID = ""
+		err = fmt.Errorf("harness: conversation %s not found", j.ResumeSessionID)
+	}
 	return s, err
 }

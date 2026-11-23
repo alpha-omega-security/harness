@@ -9,6 +9,7 @@ on:
       - pricing.go
       - pricing_feed_test.go
       - pricing_live_test.go
+      - antigravity.go
       - claude.go
       - codex.go
       - copilot.go
