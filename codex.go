@@ -214,7 +214,7 @@ func parseCodexLine(raw []byte, emit func(Event)) {
 
 func isCodexSessionEvent(event codexLine) bool {
 	switch event.Type {
-	case "thread.started", "session.created", "init":
+	case "thread.started", "session.created", wireTypeInit:
 		return true
 	default:
 		return false
@@ -259,7 +259,7 @@ func (CodexHarness) SkillDir(workspace, name string) string {
 	return filepath.Join(workspace, "skills", name)
 }
 
-func (CodexHarness) GuideFilename() string { return "AGENTS.md" }
+func (CodexHarness) GuideFilename() string { return agentsGuideFilename }
 
 func (CodexHarness) SystemPromptViaArgs() bool { return false }
 

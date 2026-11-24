@@ -13,6 +13,8 @@ import (
 // StripDirectives matches them case-insensitively.
 var directiveDirs = []string{
 	// Harness backends.
+	".agents",
+	".agent",
 	".claude",
 	".opencode",
 

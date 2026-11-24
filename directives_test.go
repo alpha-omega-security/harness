@@ -13,7 +13,7 @@ func TestDirectivePaths(t *testing.T) {
 	t.Parallel()
 
 	dirs, files := DirectivePaths()
-	for _, want := range []string{".claude", ".opencode", ".cursor", ".aider.*"} {
+	for _, want := range []string{".agents", ".claude", ".opencode", ".cursor", ".aider.*"} {
 		if !slices.Contains(dirs, want) {
 			t.Errorf("DirectivePaths dirs missing %q", want)
 		}

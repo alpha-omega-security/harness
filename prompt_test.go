@@ -19,6 +19,11 @@ func TestDefaultPromptBytes(t *testing.T) {
 		want string
 	}{
 		{
+			name: "antigravity",
+			h:    AntigravityHarness{},
+			want: `Follow the instructions in ./.agents/skills/audit/SKILL.md against the repository cloned at ./src. Write your structured output to ./report.json as the skill specifies.` + validation,
+		},
+		{
 			name: "claude",
 			h:    ClaudeHarness{},
 			want: `Use the "audit" skill on the repository cloned at ./src. Write your structured output to ./report.json as the skill specifies.` + validation,

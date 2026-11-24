@@ -9,6 +9,7 @@ const (
 	accountPhraseRateLimit       = "rate limit"
 	accountCodeRateLimit         = "rate_limit"
 	accountPhraseTooManyRequests = "too many requests"
+	accountPhraseQuota           = "quota"
 )
 
 // AccountError reports a provider-level account problem for which immediately

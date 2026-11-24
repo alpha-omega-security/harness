@@ -41,10 +41,11 @@ type feedTier struct {
 
 // feedProviders names the feed provider that lists each backend's models.
 var feedProviders = map[string]string{
-	"claude":   "anthropic",
-	"codex":    "openai",
-	"copilot":  "github-copilot",
-	"opencode": "anthropic",
+	"antigravity": "google",
+	"claude":      "anthropic",
+	"codex":       "openai",
+	"copilot":     "github-copilot",
+	"opencode":    "anthropic",
 }
 
 // acceptedDrift is an intended difference: the detail pricingDrift reports for

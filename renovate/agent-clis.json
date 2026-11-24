@@ -49,6 +49,18 @@
       "depNameTemplate": "github/copilot-cli",
       "datasourceTemplate": "github-release-attachments",
       "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Antigravity CLI release assets and their SHA-256 pins",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG ANTIGRAVITY_(?:AMD64|ARM64)_LOCK=(?<currentValue>\\d+\\.\\d+\\.\\d+)@sha256:(?<currentDigest>[a-f0-9]{64})"
+      ],
+      "packageNameTemplate": "google-antigravity/antigravity-cli",
+      "depNameTemplate": "google-antigravity/antigravity-cli",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -74,6 +86,12 @@
       "description": "Group the GitHub Copilot CLI assets into one update, held back until it moves at least two pins",
       "matchPackageNames": ["github/copilot-cli"],
       "groupName": "GitHub Copilot CLI",
+      "minimumGroupSize": 2
+    },
+    {
+      "description": "Group the Antigravity CLI assets into one update, held back until it moves at least two pins",
+      "matchPackageNames": ["google-antigravity/antigravity-cli"],
+      "groupName": "Antigravity CLI",
       "minimumGroupSize": 2
     }
   ]

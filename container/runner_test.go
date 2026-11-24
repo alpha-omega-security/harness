@@ -230,6 +230,15 @@ func TestRunnerArgs_StateDir(t *testing.T) {
 	if !hasAdjacent(opencode, "-e", "OPENCODE_DB=/harness-state/opencode.db") {
 		t.Errorf("OpenCode database path must use container path separators: %v", opencode)
 	}
+
+	antigravity := Runner{StateDir: "/data/state"}.args(harness.AntigravityHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
+	if !hasAdjacent(antigravity, "-e", "HOME="+StateMount) || slices.Contains(antigravity, "HOME=/tmp") {
+		t.Errorf("Antigravity state must replace the /tmp HOME, not follow it: %v", antigravity)
+	}
+	stateless := Runner{}.args(harness.AntigravityHarness{}, harness.Job{Workspace: WorkMount}, "/abs/work")
+	if !hasAdjacent(stateless, "-e", "HOME=/tmp") {
+		t.Errorf("Antigravity without StateDir must keep HOME=/tmp: %v", stateless)
+	}
 }
 
 func TestRunnerArgs_ExtraMountsAndEnv(t *testing.T) {

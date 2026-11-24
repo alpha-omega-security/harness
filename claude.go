@@ -21,7 +21,7 @@ func (ClaudeHarness) Binary() string { return "claude" }
 func (ClaudeHarness) Args(j Job) []string {
 	args := []string{
 		"-p",
-		"--output-format", "stream-json",
+		flagOutputFormat, "stream-json",
 		"--verbose",
 		"--include-partial-messages",
 	}
@@ -401,7 +401,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		// reports a new throwaway session id in its result, which must not be
 		// treated as a successful resume.
 		switch message.Subtype {
-		case "init":
+		case wireTypeInit:
 			if message.SessionID != "" {
 				emit(Event{Kind: KindSession, SessionID: message.SessionID})
 			}
@@ -418,7 +418,7 @@ func (state *claudeStreamState) parseLine(raw []byte, emit func(Event)) {
 		}
 	case "stream_event":
 		state.handleStreamEvent(message, emit)
-	case "result":
+	case wireTypeResult:
 		emit(state.resultEvent(message))
 		if message.Subtype == "error_max_turns" {
 			emit(Event{Kind: KindError, Text: maxTurnsText})

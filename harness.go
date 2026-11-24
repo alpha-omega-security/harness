@@ -12,6 +12,9 @@ import (
 const (
 	DefaultMaxTurns = 30
 
+	agentsGuideFilename = "AGENTS.md"
+	flagOutputFormat    = "--output-format"
+
 	modelClaudeOpus5ID   = "claude-opus-5"
 	modelClaudeSonnet5ID = "claude-sonnet-5"
 	modelGPT53CodexID    = "gpt-5.3-codex"
@@ -53,8 +56,9 @@ type Job struct {
 	SystemPrompt string
 
 	Model string
-	// Effort is the backend-native reasoning effort accepted by Claude, Codex,
-	// and Copilot. An empty value leaves the backend default unchanged.
+	// Effort is the backend-native reasoning effort accepted by Antigravity,
+	// Claude, Codex, and Copilot. An empty value leaves the backend default
+	// unchanged.
 	Effort   string
 	MaxTurns int
 
@@ -133,11 +137,12 @@ type ModelDefault struct {
 // harnesses is the backend registry. The empty alias preserves Claude as the
 // default when callers have no explicit selection.
 var harnesses = map[string]Harness{
-	"":         ClaudeHarness{},
-	"claude":   ClaudeHarness{},
-	"codex":    CodexHarness{},
-	"copilot":  CopilotHarness{},
-	"opencode": OpencodeHarness{},
+	"":            ClaudeHarness{},
+	"antigravity": AntigravityHarness{},
+	"claude":      ClaudeHarness{},
+	"codex":       CodexHarness{},
+	"copilot":     CopilotHarness{},
+	"opencode":    OpencodeHarness{},
 }
 
 // ByName resolves a backend name. The empty name selects Claude.
@@ -184,7 +189,7 @@ func Names() string {
 // safePrompt returns p unchanged unless it begins with `-`, in which case a
 // single leading space is prefixed so the backend CLI cannot parse it as a
 // flag. Job.Prompt and Job.ResumePrompt land in positional argv on three of
-// four backends; without this a prompt of `--dangerously-skip-permissions`
+// five backends; without this a prompt of `--dangerously-skip-permissions`
 // (Claude) or `--full-auto` (Codex) would override the permission mode Args
 // set. The space is whitespace the model ignores.
 func safePrompt(p string) string {
